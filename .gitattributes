@@ -1,0 +1,4 @@
+# nbstripout — 커밋 시 Jupyter 노트북 출력(output)을 자동으로 제거
+# 설치: analysis/ 폴더에서 venv 활성화 후 "nbstripout --install" 실행
+*.ipynb filter=nbstripout
+*.ipynb diff=ipynb
