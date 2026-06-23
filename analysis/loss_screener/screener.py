@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from psych_agent.config import Config
 from psych_agent.preprocess import preprocess, trades_from_df
 from psych_agent.prices import PriceLookup
-from psych_agent.schema import Trade
+from psych_agent.schema import Preprocessed, Trade
 
 from .market_index import MarketIndex
 
@@ -63,19 +63,20 @@ def _pct(a: float | None, b: float | None) -> float | None:
     return b / a - 1.0
 
 
-def screen_trades(
-    trades: list[Trade] | "pd.DataFrame",  # noqa: F821
-    config: Config | None = None,
-    market: MarketIndex | None = None,
-    prices: PriceLookup | None = None,
-) -> ScreenResult:
-    config = config or Config()
-    if not isinstance(trades, list):
-        trades = trades_from_df(trades)
-    pre = preprocess(trades, config)
-    market = market or MarketIndex(config)
-    prices = prices or PriceLookup(config)
+def cycle_key(code: str, entry_time) -> str:
+    """사이클 식별 키 (psych 귀속에서 손실거래 ↔ 사이클 매칭용)."""
+    return f"{code}@{entry_time}"
 
+
+def score_cycles(
+    pre: Preprocessed,
+    market: MarketIndex,
+    prices: PriceLookup,
+) -> ScreenResult:
+    """이미 preprocess 된 데이터에 대해 사이클별 α/티어 점수만 계산.
+
+    오케스트레이션에서 preprocess 를 1회만 돌리고 screener·psych 가 공유하도록 분리.
+    """
     scores: list[TradeScore] = []
     for c in pre.closed_cycles:
         entry_px = prices.price_at(c.code, c.entry_time)
@@ -114,3 +115,18 @@ def screen_trades(
         key=lambda s: (s.tier, s.alpha if s.alpha is not None else 0.0),
     )
     return ScreenResult(scores=scores, selected=selected)
+
+
+def screen_trades(
+    trades: list[Trade] | "pd.DataFrame",  # noqa: F821
+    config: Config | None = None,
+    market: MarketIndex | None = None,
+    prices: PriceLookup | None = None,
+) -> ScreenResult:
+    config = config or Config()
+    if not isinstance(trades, list):
+        trades = trades_from_df(trades)
+    pre = preprocess(trades, config)
+    market = market or MarketIndex(config)
+    prices = prices or PriceLookup(config)
+    return score_cycles(pre, market, prices)
