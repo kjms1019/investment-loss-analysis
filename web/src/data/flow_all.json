@@ -1,0 +1,399 @@
+{
+  "scenario": "all",
+  "label": "혼합 (현실적)",
+  "screening": {
+    "closed": 38,
+    "tier1": 11,
+    "tier2": 3,
+    "market_driven_excluded": 9,
+    "selected": 14
+  },
+  "routing": {
+    "revenge": 2,
+    "overtrading": 3,
+    "disposition": 1,
+    "other": 8
+  },
+  "losses": [
+    {
+      "code": "000020",
+      "name": "동화약품",
+      "entry_time": "2026-04-10 10:30:00",
+      "return_pct": -0.88,
+      "r_mkt_pct": 9.31,
+      "alpha_pct": -9.98,
+      "tier": 1,
+      "holding_min": 44550.0,
+      "dominant": "disposition",
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 3.0,
+          "evidence": [
+            "평균 수익거래(61분)의 725.7배 보유(손실을 오래 끌었음)",
+            "이 손실 보유 중 수익 종목 10건 익절(이익은 빨리, 손실은 길게)"
+          ]
+        }
+      },
+      "correction": "진입과 동시에 손절·익절 가격을 같이 적어두고 기계적으로 집행하세요. 손실은 빨리 끊고 수익은 끌고 가도록 비대칭을 교정합니다."
+    },
+    {
+      "code": "000100",
+      "name": "유한양행",
+      "entry_time": "2026-06-04 09:00:00",
+      "return_pct": -0.93,
+      "r_mkt_pct": 0.78,
+      "alpha_pct": -1.51,
+      "tier": 1,
+      "holding_min": 14.0,
+      "dominant": "overtrading",
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 2.2,
+          "evidence": [
+            "진입일에 10건 매매 = 평소 하루(4건)의 2.5배(과매매 군집)"
+          ]
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": "월 거래 건수 상한(예: 개인 중앙값 수준)을 사전에 정하고, 진입 전 '이 거래가 계획된 것인가'를 1줄로 적는 체크를 도입하세요."
+    },
+    {
+      "code": "000070",
+      "name": "삼양홀딩스",
+      "entry_time": "2026-05-11 10:04:00",
+      "return_pct": -0.97,
+      "r_mkt_pct": 0.41,
+      "alpha_pct": -1.18,
+      "tier": 1,
+      "holding_min": 24.0,
+      "dominant": "revenge",
+      "signals": {
+        "revenge": {
+          "score": 3.0,
+          "evidence": [
+            "직전 동화약품 -0.9% 손절 후 13분 만에 재진입",
+            "투입금 2.0배 확대(포지션 키움)",
+            "그 재진입도 재손실 → 전형적 리벤지"
+          ]
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": "손절 직후 최소 30분(권장: 당일 종가까지) 신규 진입을 잠그는 '쿨다운 룰'을 두세요. 만회 충동이 가장 강한 구간을 물리적으로 차단합니다."
+    },
+    {
+      "code": "000080",
+      "name": "하이트진로",
+      "entry_time": "2026-06-10 09:58:00",
+      "return_pct": -0.7,
+      "r_mkt_pct": 0.63,
+      "alpha_pct": -1.14,
+      "tier": 1,
+      "holding_min": 16.0,
+      "dominant": null,
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": ""
+    },
+    {
+      "code": "000020",
+      "name": "동화약품",
+      "entry_time": "2026-05-11 09:40:00",
+      "return_pct": -0.88,
+      "r_mkt_pct": -0.0,
+      "alpha_pct": -0.67,
+      "tier": 1,
+      "holding_min": 11.0,
+      "dominant": null,
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": ""
+    },
+    {
+      "code": "000080",
+      "name": "하이트진로",
+      "entry_time": "2026-06-02 13:37:00",
+      "return_pct": -0.44,
+      "r_mkt_pct": 0.27,
+      "alpha_pct": -0.51,
+      "tier": 1,
+      "holding_min": 18.0,
+      "dominant": "overtrading",
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 1.0,
+          "evidence": [
+            "진입일에 6건 매매(거래 폭주일)"
+          ]
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": "월 거래 건수 상한(예: 개인 중앙값 수준)을 사전에 정하고, 진입 전 '이 거래가 계획된 것인가'를 1줄로 적는 체크를 도입하세요."
+    },
+    {
+      "code": "000070",
+      "name": "삼양홀딩스",
+      "entry_time": "2026-05-18 09:00:00",
+      "return_pct": -1.5,
+      "r_mkt_pct": -0.83,
+      "alpha_pct": -0.47,
+      "tier": 1,
+      "holding_min": 2.0,
+      "dominant": null,
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": ""
+    },
+    {
+      "code": "000100",
+      "name": "유한양행",
+      "entry_time": "2026-05-15 10:24:00",
+      "return_pct": -1.22,
+      "r_mkt_pct": -0.6,
+      "alpha_pct": -0.42,
+      "tier": 1,
+      "holding_min": 33.0,
+      "dominant": null,
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": ""
+    },
+    {
+      "code": "000150",
+      "name": "두산",
+      "entry_time": "2026-06-05 10:15:00",
+      "return_pct": -0.32,
+      "r_mkt_pct": -0.06,
+      "alpha_pct": -0.06,
+      "tier": 1,
+      "holding_min": 2.0,
+      "dominant": null,
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": ""
+    },
+    {
+      "code": "000070",
+      "name": "삼양홀딩스",
+      "entry_time": "2026-06-05 10:15:00",
+      "return_pct": -0.39,
+      "r_mkt_pct": -0.14,
+      "alpha_pct": -0.05,
+      "tier": 1,
+      "holding_min": 7.0,
+      "dominant": null,
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": ""
+    },
+    {
+      "code": "000020",
+      "name": "동화약품",
+      "entry_time": "2026-06-02 11:52:00",
+      "return_pct": -0.2,
+      "r_mkt_pct": 0.03,
+      "alpha_pct": -0.03,
+      "tier": 1,
+      "holding_min": 18.0,
+      "dominant": "overtrading",
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 1.0,
+          "evidence": [
+            "진입일에 6건 매매(거래 폭주일)"
+          ]
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": "월 거래 건수 상한(예: 개인 중앙값 수준)을 사전에 정하고, 진입 전 '이 거래가 계획된 것인가'를 1줄로 적는 체크를 도입하세요."
+    },
+    {
+      "code": "000120",
+      "name": "CJ대한통운",
+      "entry_time": "2026-05-18 09:20:00",
+      "return_pct": 0.24,
+      "r_mkt_pct": 1.11,
+      "alpha_pct": -0.67,
+      "tier": 2,
+      "holding_min": 42.0,
+      "dominant": "revenge",
+      "signals": {
+        "revenge": {
+          "score": 2.0,
+          "evidence": [
+            "직전 삼양홀딩스 -1.5% 손절 후 18분 만에 재진입",
+            "투입금 2.0배 확대(포지션 키움)"
+          ]
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": "손절 직후 최소 30분(권장: 당일 종가까지) 신규 진입을 잠그는 '쿨다운 룰'을 두세요. 만회 충동이 가장 강한 구간을 물리적으로 차단합니다."
+    },
+    {
+      "code": "000080",
+      "name": "하이트진로",
+      "entry_time": "2026-05-13 10:08:00",
+      "return_pct": 0.41,
+      "r_mkt_pct": 0.88,
+      "alpha_pct": -0.27,
+      "tier": 2,
+      "holding_min": 52.0,
+      "dominant": null,
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": ""
+    },
+    {
+      "code": "000100",
+      "name": "유한양행",
+      "entry_time": "2026-04-23 13:07:00",
+      "return_pct": 0.44,
+      "r_mkt_pct": 0.64,
+      "alpha_pct": -0.01,
+      "tier": 2,
+      "holding_min": 104.0,
+      "dominant": null,
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": ""
+    }
+  ]
+}
