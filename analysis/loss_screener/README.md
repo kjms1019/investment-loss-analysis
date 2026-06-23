@@ -4,6 +4,14 @@
 절대손익이 아니라 **시장 영향을 제거한 초과손실(abnormal return)** 로 복기 대상을
 고른다 → 이후 다중분류기 → 진입/손절/심리 에이전트로 라우팅. (심리 에이전트는 그 다음 단계)
 
+> 📖 **선별→심리 귀속→웹 전체 흐름은 [../PIPELINE.md](../PIPELINE.md) 한 문서로 정리돼 있다.**
+
+## API 두 가지
+
+- `score_cycles(pre, market, prices)` — **이미 preprocess 된 데이터**에 점수만 계산.
+  오케스트레이션(`pipeline.py`)이 preprocess 를 1회만 돌리고 screener·psych 가 공유할 때.
+- `screen_trades(trades)` — 거래내역만 주면 내부에서 preprocess까지 다 하는 독립 진입점.
+
 ## 왜 절대손익이 아니라 초과수익인가
 
 우리는 "시장이 빠져서 같이 잃은 것"이 아니라 **"남들은 안 잃었는데 너만 유독 못한"**

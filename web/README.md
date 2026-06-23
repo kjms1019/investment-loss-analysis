@@ -1,20 +1,27 @@
 # 심리·과매매 복기 — 웹 데모 (Next.js)
 
-준모 심리/과매매 분석 에이전트의 **실제 출력**을 시각화하는 대시보드.
+파이프라인의 **실제 출력**을 시각화하는 대시보드.
 Vercel에 그대로 배포되는 정적(SSG) Next.js 앱이다 — 서버에 Python 불필요.
+
+> 📖 백엔드 전체 흐름은 [../analysis/PIPELINE.md](../analysis/PIPELINE.md).
+
+## 두 가지 뷰 (우상단 토글)
+
+- **손실→라우팅** (기본): ① 손실 선별 funnel(청산 N → 복기대상 M / 시장탓 제외) →
+  ② 심리 유형 라우팅 막대 → ③ 손실거래별 카드(실현/시장/α/보유 + dominant 유형 + 교정).
+  데이터: `flow_*.json` ← `analysis/web_export.py` (pipeline 출력).
+- **계좌 전체 경향**: 거래 전체에서 본 3패턴 강/중/약 + 진단(큰 그림).
+  데이터: `*.json` ← `analysis/psych_agent/export_web.py`.
 
 ## 구조
 
 ```
 web/
-├── src/app/         App Router (page.tsx = 클라이언트 대시보드)
-├── src/components/  PatternCards / Diagnosis / ui
-├── src/lib/         타입 + 데이터 로더
-└── src/data/        ← 에이전트가 뽑은 시나리오별 리포트 JSON (빌드 타임 포함)
+├── src/app/page.tsx     뷰 토글 + 시나리오 탭
+├── src/components/       FlowView(신규) / PatternCards / Diagnosis / ui
+├── src/lib/             flow.ts(신규) / data.ts / types.ts
+└── src/data/            flow_*.json (라우팅) + *.json (계좌 전체) — 빌드 타임 포함
 ```
-
-데이터는 `analysis/psych_agent/export_web.py` 가 4개 시나리오(혼합/리벤지/과매매/처분효과)
-를 분석해 `src/data/*.json` 으로 떨군 결과다. 1분봉 실가격 기반 더미 거래내역의 진짜 분석 출력.
 
 ## 로컬 실행
 
@@ -25,11 +32,12 @@ npm run dev        # http://localhost:3000
 # 시나리오 딥링크:  /#disposition  /#revenge  /#overtrading  /#all
 ```
 
-## 데이터 갱신 (에이전트 로직/더미를 바꿨을 때)
+## 데이터 갱신 (에이전트/선별 로직·더미를 바꿨을 때)
 
 ```bash
 cd analysis
-./venv/bin/python -m psych_agent.export_web ../web/src/data
+./venv/bin/python -m web_export ../web/src/data            # 손실→라우팅(flow_*.json)
+./venv/bin/python -m psych_agent.export_web ../web/src/data # 계좌 전체(*.json)
 ```
 
 LLM 진단을 켜고 싶으면 익스포트 전에 `ANTHROPIC_API_KEY` 를 설정하면
