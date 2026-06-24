@@ -22,7 +22,6 @@ REQUIRED_PATHS = [
     "src/schema_mapper.py",
     "src/feature_engineering.py",
     "src/entry_classifier.py",
-    "src/report_generator.py",
     "sample_data",
     "sample_data/tiny_mock.csv",
     "reports",

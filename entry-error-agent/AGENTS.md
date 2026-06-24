@@ -27,7 +27,8 @@
 - `schema_mapper.py`: 실제 CSV 컬럼명을 표준 컬럼명으로 변환
 - `feature_engineering.py`: 진입 시점 기준 보조 지표와 맥락 피처 계산
 - `entry_classifier.py`: 시장 상태 분류와 진입오류 라벨링
-- `report_generator.py`: JSON 리포트와 자연어 복기 리포트 생성
+- `min1_classifier.py`: 1분봉 기반 시장 상태 분류
+- `min1_labeler.py`: 1분봉 기반 진입오류 라벨링 + 위험 점수 계산
 
 ## 분석 기준
 
