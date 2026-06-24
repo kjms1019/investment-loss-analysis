@@ -1,0 +1,96 @@
+{
+  "scenario": "revenge",
+  "label": "리벤지 중심",
+  "agents": [
+    {
+      "agent_id": "entry_error_psych_hybrid",
+      "base_agent_id": "entry_error",
+      "score": 100.0,
+      "severity": "strong",
+      "summary": "진입 의사결정 오류와 결합된 리벤지 신호를 확인합니다.",
+      "psych_assignments": [
+        {
+          "type_key": "revenge",
+          "target_agent_id": "entry_error_psych_hybrid",
+          "rationale": "손실 직후 빠른 재진입과 포지션 확대는 청산 이후의 다음 매수 결정이 무너진 패턴이므로 진입 오류 쪽에 더 가깝다.",
+          "included": true
+        }
+      ],
+      "findings": [
+        {
+          "type": "revenge",
+          "label": "리벤지 트레이딩",
+          "detected": true,
+          "severity": "strong",
+          "metrics": {
+            "signal_count": 4,
+            "strong_count": 2,
+            "moderate_count": 2,
+            "weak_count": 0,
+            "window_min": 30
+          },
+          "evidence": [
+            "[강] 동화약품 -0.88% 손절 후 13분 만에 삼양홀딩스 재진입 (투입금 1.99배 확대) → 재손실",
+            "[강] 경방 -1.23% 손절 후 14분 만에 유한양행 재진입 (투입금 2.0배 확대) → 재손실",
+            "[중] KR모터스 -1.93% 손절 후 10분 만에 하이트진로 재진입 (투입금 2.0배 확대)",
+            "[중] 삼양홀딩스 -1.5% 손절 후 18분 만에 CJ대한통운 재진입 (투입금 1.98배 확대)"
+          ],
+          "reference": "리벤지 트레이딩: 손실 직후 충동적 재진입 + 포지션 확대 (행동재무 문헌)"
+        }
+      ],
+      "recommendations": [
+        "손실 직후 일정 시간 신규 진입을 차단하는 쿨다운 규칙을 둔다."
+      ]
+    },
+    {
+      "agent_id": "stop_loss_psych_hybrid",
+      "base_agent_id": "stop_loss_failure",
+      "score": 100.0,
+      "severity": "strong",
+      "summary": "손절 실패와 결합된 처분효과 신호를 확인합니다.",
+      "psych_assignments": [
+        {
+          "type_key": "disposition",
+          "target_agent_id": "stop_loss_psych_hybrid",
+          "rationale": "처분효과는 이익은 빨리 실현하고 손실은 오래 보유하는 비대칭으로, 손절 실패의 심리적 하위 원인에 가장 직접적으로 대응한다.",
+          "included": true
+        }
+      ],
+      "findings": [
+        {
+          "type": "disposition",
+          "label": "처분효과",
+          "detected": true,
+          "severity": "strong",
+          "metrics": {
+            "pgr": 0.367,
+            "plr": 0.118,
+            "pgr_minus_plr": 0.249,
+            "realized_gain": 11,
+            "realized_loss": 2,
+            "paper_gain": 19,
+            "paper_loss": 15,
+            "avg_win_hold_min": 82.5,
+            "avg_loss_hold_min": 22280.5
+          },
+          "evidence": [
+            "PGR(이익실현 성향) 0.37 vs PLR(손실실현 성향) 0.12 → 차이 +0.25 (처분효과 양(+))",
+            "평균 보유: 수익 83분 vs 손실 22280분 (손실을 269.9배 오래 보유)"
+          ],
+          "reference": "Shefrin & Statman (1985) 명명, Odean (1998) PGR/PLR 측정법"
+        }
+      ],
+      "recommendations": [
+        "진입과 동시에 손절 가격과 시간 제한을 기록하고 예외 조건을 미리 정한다.",
+        "수익 포지션 청산 전 손실 포지션의 보유 사유를 먼저 점검한다."
+      ]
+    }
+  ],
+  "discarded_psych_features": [
+    {
+      "type": "overtrading",
+      "label": "과매매",
+      "reason": "거래 빈도와 습관 문제라 진입오류/손절실패 중 하나에 강제로 붙이지 않음."
+    }
+  ]
+}

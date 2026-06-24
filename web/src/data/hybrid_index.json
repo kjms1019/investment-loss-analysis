@@ -1,0 +1,14 @@
+[
+  {
+    "scenario": "all",
+    "label": "혼합"
+  },
+  {
+    "scenario": "revenge",
+    "label": "리벤지 중심"
+  },
+  {
+    "scenario": "disposition",
+    "label": "처분효과 중심"
+  }
+]

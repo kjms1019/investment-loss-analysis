@@ -3,13 +3,15 @@
 import { useEffect, useState } from "react";
 import { REPORTS, SCENARIO_ORDER } from "@/lib/data";
 import { FLOWS } from "@/lib/flow";
+import { HYBRIDS, HYBRID_SCENARIOS } from "@/lib/hybrid";
 import { FlowView } from "@/components/FlowView";
+import { HybridAgentsView } from "@/components/HybridAgents";
 import { PatternCard } from "@/components/PatternCards";
 import { DiagnosisPanel } from "@/components/Diagnosis";
 
 export default function Home() {
   const [scenario, setScenario] = useState("all");
-  const [view, setView] = useState<"flow" | "account">("flow");
+  const [view, setView] = useState<"flow" | "account" | "hybrid">("flow");
 
   useEffect(() => {
     const fromHash = window.location.hash.slice(1);
@@ -23,6 +25,9 @@ export default function Home() {
 
   const flow = FLOWS[scenario];
   const report = REPORTS[scenario];
+  const hybridScenario = HYBRIDS[scenario] ? scenario : "all";
+  const hybrid = HYBRIDS[hybridScenario];
+  const tabs = view === "hybrid" ? HYBRID_SCENARIOS : SCENARIO_ORDER;
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8 sm:py-12">
@@ -43,7 +48,7 @@ export default function Home() {
       {/* 시나리오 탭 + 뷰 전환 */}
       <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap gap-2">
-          {SCENARIO_ORDER.map((sc) => {
+          {tabs.map((sc) => {
             const active = sc.key === scenario;
             return (
               <button
@@ -61,10 +66,13 @@ export default function Home() {
           })}
         </div>
         <div className="flex rounded-full border border-[var(--border)] bg-[var(--panel)] p-0.5 text-xs">
-          {([["flow", "손실→라우팅"], ["account", "계좌 전체 경향"]] as const).map(([k, label]) => (
+          {([["flow", "손실→라우팅"], ["account", "계좌 전체"], ["hybrid", "하이브리드"]] as const).map(([k, label]) => (
             <button
               key={k}
-              onClick={() => setView(k)}
+              onClick={() => {
+                setView(k);
+                if (k === "hybrid" && !HYBRIDS[scenario]) select("all");
+              }}
               className={`rounded-full px-3 py-1 font-medium transition ${
                 view === k ? "bg-slate-700 text-slate-100" : "text-slate-500 hover:text-slate-300"
               }`}
@@ -77,7 +85,7 @@ export default function Home() {
 
       {view === "flow" ? (
         <FlowView flow={flow} />
-      ) : (
+      ) : view === "account" ? (
         <div className="space-y-6">
           <p className="text-xs text-slate-500">
             참고: 손실 선별과 무관하게 계좌 전체에서 본 심리 경향(룰/통계 + 진단). 큰 그림용.
@@ -89,6 +97,8 @@ export default function Home() {
           </section>
           <DiagnosisPanel diagnosis={report.diagnosis} />
         </div>
+      ) : (
+        <HybridAgentsView report={hybrid} />
       )}
 
       <footer className="mt-10 border-t border-[var(--border)] pt-4 text-[11px] text-slate-600">
