@@ -237,6 +237,15 @@ def compute_volume_features(rows: List[Dict[str, str]]) -> Dict[str, str]:
 # Real 1-minute OHLCV window feature engineering
 # ---------------------------------------------------------------------------
 
+FEATURE_STATUS_OK = "ok"
+FEATURE_STATUS_PARTIAL = "partial"
+FEATURE_STATUS_RAW_DATA_ABSENT = "raw_data_absent"
+FEATURE_STATUS_PRE_ENTRY_HISTORY_SHORT = "pre_entry_history_short"
+FEATURE_STATUS_FEATURE_MISSING_OR_INVALID = "feature_missing_or_invalid"
+
+MIN_PRE_ENTRY_BARS_FOR_BASIC = 5
+MIN_PRE_ENTRY_BARS_FOR_STATE = 40
+
 def _safe_percent_change(current_value, base_value):
     """Return (current - base) / base when values are usable."""
     if current_value is None or base_value is None:
@@ -303,6 +312,20 @@ def build_feature_result_from_min1_window(window_result, code=None, buy_price=No
     """
     import pandas as pd
 
+    if not window_result or window_result.get("window") is None:
+        return {
+            "feature_status": FEATURE_STATUS_RAW_DATA_ABSENT,
+            "data_availability_status": FEATURE_STATUS_RAW_DATA_ABSENT,
+            "context_snapshot": {
+                "symbol": code,
+                "entry_timestamp": None,
+                "entry_price": buy_price,
+            },
+            "features": {},
+            "insufficient_reasons": ["raw_min1_window_absent"],
+            "notes": ["No parquet/window data was available for this trade."],
+        }
+
     buy_time = pd.to_datetime(window_result["buy_time"])
     pre_df = window_result["before_or_at_entry"].copy()
 
@@ -311,7 +334,8 @@ def build_feature_result_from_min1_window(window_result, code=None, buy_price=No
     if pre_df.empty:
         insufficient_reasons.append("no_pre_entry_rows")
         return {
-            "feature_status": "insufficient_data",
+            "feature_status": FEATURE_STATUS_PRE_ENTRY_HISTORY_SHORT,
+            "data_availability_status": FEATURE_STATUS_PRE_ENTRY_HISTORY_SHORT,
             "context_snapshot": {
                 "symbol": code,
                 "entry_timestamp": str(buy_time),
@@ -404,6 +428,8 @@ def build_feature_result_from_min1_window(window_result, code=None, buy_price=No
     if avg_volume_20m is not None and avg_volume_20m > 0:
         volume_ratio_20m = entry_volume / avg_volume_20m
 
+    if len(pre_df) < MIN_PRE_ENTRY_BARS_FOR_STATE:
+        insufficient_reasons.append("pre_entry_history_short")
     if len(pre_df) < 20:
         insufficient_reasons.append("less_than_20_pre_entry_bars")
     if ma_20 is None:
@@ -411,14 +437,39 @@ def build_feature_result_from_min1_window(window_result, code=None, buy_price=No
     if rsi_14 is None:
         insufficient_reasons.append("rsi14_unavailable")
 
-    feature_status = "ok"
-    if len(pre_df) < 5:
-        feature_status = "insufficient_data"
+    required_state_features = {
+        "ma_20_slope": ma_20_slope,
+        "ret_20m": ret_20m,
+        "entry_vs_ma20_pct": entry_vs_ma20_pct,
+        "range_position_20m": range_position_20m,
+    }
+    missing_required_state_features = [
+        name for name, value in required_state_features.items() if value is None
+    ]
+
+    feature_status = FEATURE_STATUS_OK
+    data_availability_status = FEATURE_STATUS_OK
+    if len(pre_df) < MIN_PRE_ENTRY_BARS_FOR_BASIC:
+        feature_status = FEATURE_STATUS_PRE_ENTRY_HISTORY_SHORT
+        data_availability_status = FEATURE_STATUS_PRE_ENTRY_HISTORY_SHORT
+    elif len(pre_df) < MIN_PRE_ENTRY_BARS_FOR_STATE:
+        feature_status = FEATURE_STATUS_PRE_ENTRY_HISTORY_SHORT
+        data_availability_status = FEATURE_STATUS_PRE_ENTRY_HISTORY_SHORT
+    elif missing_required_state_features:
+        feature_status = FEATURE_STATUS_FEATURE_MISSING_OR_INVALID
+        data_availability_status = FEATURE_STATUS_FEATURE_MISSING_OR_INVALID
+        insufficient_reasons.extend(
+            [
+                "missing_or_invalid_{0}".format(name)
+                for name in missing_required_state_features
+            ]
+        )
     elif insufficient_reasons:
-        feature_status = "partial"
+        feature_status = FEATURE_STATUS_PARTIAL
 
     return {
         "feature_status": feature_status,
+        "data_availability_status": data_availability_status,
         "context_snapshot": {
             "trade_id": None,
             "symbol": code,
@@ -460,6 +511,8 @@ def build_feature_result_from_min1_window(window_result, code=None, buy_price=No
             ),
         },
         "insufficient_reasons": insufficient_reasons,
+        "missing_required_state_features": missing_required_state_features,
+        "pre_entry_row_count": len(pre_df),
         "notes": [
             "This feature set is based on 1-minute OHLCV history.",
             "Thresholds should be validated across many trades, not fitted to a single ticker.",

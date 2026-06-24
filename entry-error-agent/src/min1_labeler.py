@@ -4,6 +4,10 @@
 LABEL_KO = {
     "normal_entry": "명확한 진입오류 없음",
     "insufficient_data": "데이터 부족",
+    "raw_data_absent": "Raw data absent",
+    "pre_entry_history_short": "Pre-entry history short",
+    "feature_missing_or_invalid": "Feature missing or invalid",
+    "low_confidence": "Low confidence state",
     "gap_up_chase": "상승 구간 내 단기 추격 진입",
     "weak_flow_near_high": "고점 근처 수급 확인 부족 진입",
     "short_term_overheat": "단기 과열 연장 구간 진입",
@@ -18,6 +22,10 @@ LABEL_KO = {
 WEIGHT = {
     "normal_entry": 0,
     "insufficient_data": 0,
+    "raw_data_absent": 0,
+    "pre_entry_history_short": 0,
+    "feature_missing_or_invalid": 0,
+    "low_confidence": 0,
     "gap_up_chase": 16,
     "weak_flow_near_high": 18,
     "short_term_overheat": 22,
@@ -176,14 +184,24 @@ def _classify_range(f):
 
 def classify_min1_entry_labels(feature_result, state_result):
     """Classify entry-error labels by market state."""
-    if feature_result.get("feature_status") == "insufficient_data":
-        return [_lab("insufficient_data", 1.0, "feature_insufficient")]
+    feature_status = feature_result.get("feature_status")
+    data_issue_labels = [
+        "raw_data_absent",
+        "pre_entry_history_short",
+        "feature_missing_or_invalid",
+        "insufficient_data",
+    ]
+    if feature_status in data_issue_labels:
+        return [_lab(feature_status, 1.0, "feature_not_usable")]
 
     state = state_result.get("primary_state")
     features = feature_result.get("features", {})
 
-    if state in [None, "unknown", "insufficient_data"]:
-        return [_lab("insufficient_data", 1.0, "state_not_reliable")]
+    if state in data_issue_labels:
+        return [_lab(state, 1.0, "state_not_usable")]
+
+    if state in [None, "unknown"] or state_result.get("status") == "low_confidence":
+        return [_lab("low_confidence", 1.0, "state_low_confidence")]
 
     if state == "breakout":
         labels = _classify_breakout(features)
@@ -210,7 +228,14 @@ def score_min1_labels(labels):
     for label in labels:
         label_id = label["label_id"]
 
-        if label_id in ["normal_entry", "insufficient_data"]:
+        if label_id in [
+            "normal_entry",
+            "insufficient_data",
+            "raw_data_absent",
+            "pre_entry_history_short",
+            "feature_missing_or_invalid",
+            "low_confidence",
+        ]:
             contribution = 0.0
         else:
             contribution = label["weight"] * label["confidence"]
@@ -230,8 +255,15 @@ def score_min1_labels(labels):
 
     score = round(min(total, 100.0), 3)
 
-    if any(label["label_id"] == "insufficient_data" for label in labels):
-        severity = "insufficient_data"
+    diagnostic_labels = [
+        "insufficient_data",
+        "raw_data_absent",
+        "pre_entry_history_short",
+        "feature_missing_or_invalid",
+        "low_confidence",
+    ]
+    if any(label["label_id"] in diagnostic_labels for label in labels):
+        severity = labels[0]["label_id"]
     elif score == 0:
         severity = "none"
     elif score < 15:

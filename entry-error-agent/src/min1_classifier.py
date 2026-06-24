@@ -10,6 +10,17 @@ STATE_DOWNTREND = "downtrend"        # 하락/역배열
 STATE_RANGE = "range"                # 횡보/박스권
 STATE_UNKNOWN = "unknown"
 STATE_INSUFFICIENT_DATA = "insufficient_data"
+STATE_RAW_DATA_ABSENT = "raw_data_absent"
+STATE_PRE_ENTRY_HISTORY_SHORT = "pre_entry_history_short"
+STATE_FEATURE_MISSING_OR_INVALID = "feature_missing_or_invalid"
+STATE_LOW_CONFIDENCE = "low_confidence"
+
+DATA_ISSUE_STATES = [
+    STATE_RAW_DATA_ABSENT,
+    STATE_PRE_ENTRY_HISTORY_SHORT,
+    STATE_FEATURE_MISSING_OR_INVALID,
+    STATE_INSUFFICIENT_DATA,
+]
 
 
 def _evidence(feature, value, message):
@@ -39,14 +50,20 @@ def classify_min1_market_state(feature_result):
     Uses only pre-entry 1-minute features.
     Does not use post-trade return.
     """
-    if feature_result.get("feature_status") == STATE_INSUFFICIENT_DATA:
+    feature_status = feature_result.get("feature_status")
+    if feature_status in DATA_ISSUE_STATES:
         return {
-            "primary_state": STATE_INSUFFICIENT_DATA,
+            "primary_state": feature_status,
             "secondary_state": None,
             "state_confidence": 0.0,
             "candidate_states": [],
             "evidence": [],
-            "status": "insufficient_data",
+            "status": feature_status,
+            "data_issue_type": feature_status,
+            "insufficient_reasons": feature_result.get("insufficient_reasons", []),
+            "notes": [
+                "Market state classification was skipped because input data/features were not usable.",
+            ],
         }
 
     f = feature_result.get("features") or {}
@@ -63,20 +80,25 @@ def classify_min1_market_state(feature_result):
 
     required = [ma20_slope, ret20, entry_vs_ma20, range_pos]
     if any(v is None for v in required):
+        missing_required = [
+            name for name, value in {
+                "ma_20_slope": ma20_slope,
+                "ret_20m": ret20,
+                "entry_vs_ma20_pct": entry_vs_ma20,
+                "range_position_20m": range_pos,
+            }.items() if value is None
+        ]
         return {
-            "primary_state": STATE_INSUFFICIENT_DATA,
+            "primary_state": STATE_FEATURE_MISSING_OR_INVALID,
             "secondary_state": None,
             "state_confidence": 0.0,
             "candidate_states": [],
             "evidence": [],
-            "status": "insufficient_data",
-            "missing_required": [
-                name for name, value in {
-                    "ma_20_slope": ma20_slope,
-                    "ret_20m": ret20,
-                    "entry_vs_ma20_pct": entry_vs_ma20,
-                    "range_position_20m": range_pos,
-                }.items() if value is None
+            "status": STATE_FEATURE_MISSING_OR_INVALID,
+            "data_issue_type": STATE_FEATURE_MISSING_OR_INVALID,
+            "missing_required": missing_required,
+            "notes": [
+                "Rows were available, but required state features were missing or invalid.",
             ],
         }
 
@@ -165,7 +187,7 @@ def classify_min1_market_state(feature_result):
 
     if primary["confidence"] < 0.35:
         primary_state = STATE_UNKNOWN
-        status = "low_confidence"
+        status = STATE_LOW_CONFIDENCE
     else:
         primary_state = primary["state"]
         status = "ok"
