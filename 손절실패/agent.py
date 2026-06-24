@@ -18,7 +18,7 @@ from schema import Transaction, OHLCV
 from cycles import build_cycles
 from path_features import attach_path_features
 from rules import compute_signals
-from scoring import compute_score
+from scoring import compute_score, compute_shadow_score
 from report import generate_report
 from config import Config, DEFAULT_CONFIG
 from data_loader import load_daily_ohlcv, load_minute_df, _DEFAULT_DATA_DIR
@@ -31,7 +31,8 @@ def _run_pipeline(cycles, all_ohlcv, user_stop_pct, config, minute_dfs: dict) ->
         cycle = attach_path_features(cycle, all_ohlcv, user_stop_pct, config, minute_df)
         signals = compute_signals(cycle, config)
         score = compute_score(cycle, signals, config)
-        report = generate_report(cycle, signals, score, config)
+        shadow_score = compute_shadow_score(cycle, signals, config)
+        report = generate_report(cycle, signals, score, config, shadow_score)
         results.append(report)
     return results
 

@@ -15,8 +15,15 @@ def _judgment_type(cycle: Cycle, signals: dict, score: float) -> str:
     return "물타기형" if ranked == "avg_down" else "지연형"
 
 
-def _narrative(cycle: Cycle, signals: dict, score: float) -> str:
+def _narrative(cycle: Cycle, signals: dict, score: float, shadow_score: float = 0.0) -> str:
     if cycle.realized_return > 0:
+        if cycle.breached and shadow_score >= 0.1:
+            return (
+                f"수익으로 끝나 점수는 0점이지만, {cycle.breach_date.strftime('%m월 %d일')}에 "
+                f"{cycle.MAE_pct:.1f}%까지 손절선({cycle.stop_pct:.1f}%)을 넘어 빠졌었습니다. "
+                f"이때 손절했다면 {shadow_score:.2f}점짜리 손절실패였을 행동입니다 "
+                "(운이 좋아 익절했을 뿐, 같은 행동을 반복하면 다음엔 손실로 끝날 수 있습니다)."
+            )
         return "수익 거래라 손절실패 진단에서 제외됩니다."
     if not cycle.breached:
         method_ko = _STOP_METHOD_KO.get(cycle.stop_method, cycle.stop_method)
@@ -51,6 +58,7 @@ def generate_report(
     signals: dict,
     score: float,
     config: Config = DEFAULT_CONFIG,
+    shadow_score: float = 0.0,
 ) -> dict:
     lucky_hold = (cycle.realized_return > 0) and (cycle.MAE_pct <= config.lucky_hold_threshold)
     judgment_type = _judgment_type(cycle, signals, score)
@@ -81,6 +89,9 @@ def generate_report(
         "flags": {
             "lucky_hold": lucky_hold,
         },
-        "narrative":       _narrative(cycle, signals, score),
+        # score(0)와 별개로, "이 보유 행동이 손실로 끝났다면 몇 점이었을지" 참고용.
+        # cross-agent 비교에는 쓰지 않음 — lucky_hold 코칭 메시지 전용.
+        "shadow_score": shadow_score if cycle.realized_return > 0 else None,
+        "narrative":       _narrative(cycle, signals, score, shadow_score),
         "recommendation":  _recommendation(cycle, signals, config),
     }
