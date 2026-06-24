@@ -231,3 +231,238 @@ def compute_high_low_features(rows: List[Dict[str, str]]) -> Dict[str, str]:
 def compute_volume_features(rows: List[Dict[str, str]]) -> Dict[str, str]:
     """Return a TODO result for future volume features."""
     return _not_implemented_result()
+
+
+# ---------------------------------------------------------------------------
+# Real 1-minute OHLCV window feature engineering
+# ---------------------------------------------------------------------------
+
+def _safe_percent_change(current_value, base_value):
+    """Return (current - base) / base when values are usable."""
+    if current_value is None or base_value is None:
+        return None
+    try:
+        current_value = float(current_value)
+        base_value = float(base_value)
+    except (TypeError, ValueError):
+        return None
+    if base_value == 0:
+        return None
+    return (current_value - base_value) / base_value
+
+
+def _series_value(series, index_from_end):
+    """Return a float value from a pandas Series by negative position."""
+    if series is None or len(series) < abs(index_from_end):
+        return None
+    value = series.iloc[index_from_end]
+    if value != value:
+        return None
+    return float(value)
+
+
+def _compute_rsi_from_close(close_series, period=14):
+    """Compute simple RSI using only close prices available up to entry."""
+    if close_series is None or len(close_series) < period + 1:
+        return None
+
+    delta = close_series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
+
+    last_avg_gain = avg_gain.iloc[-1]
+    last_avg_loss = avg_loss.iloc[-1]
+
+    if last_avg_gain != last_avg_gain or last_avg_loss != last_avg_loss:
+        return None
+    if last_avg_loss == 0:
+        return 100.0
+
+    rs = last_avg_gain / last_avg_loss
+    return float(100 - (100 / (1 + rs)))
+
+
+def build_feature_result_from_min1_window(window_result, code=None, buy_price=None):
+    """Build feature result from real 1-minute OHLCV data.
+
+    Only rows at or before buy_time are used for entry-decision features.
+    Rows after buy_time are kept out of features to avoid look-ahead bias.
+
+    Parameters
+    ----------
+    window_result:
+        Result dictionary returned by extract_trade_window().
+    code:
+        Optional stock code for the report context.
+    buy_price:
+        Optional actual buy price. If omitted, the close price of the entry
+        minute is used as a fallback for development testing.
+    """
+    import pandas as pd
+
+    buy_time = pd.to_datetime(window_result["buy_time"])
+    pre_df = window_result["before_or_at_entry"].copy()
+
+    insufficient_reasons = []
+
+    if pre_df.empty:
+        insufficient_reasons.append("no_pre_entry_rows")
+        return {
+            "feature_status": "insufficient_data",
+            "context_snapshot": {
+                "symbol": code,
+                "entry_timestamp": str(buy_time),
+                "entry_price": buy_price,
+            },
+            "features": {},
+            "insufficient_reasons": insufficient_reasons,
+            "notes": ["No pre-entry 1-minute rows were available."],
+        }
+
+    pre_df = pre_df.sort_values("datetime").reset_index(drop=True)
+
+    entry_bar = pre_df.iloc[-1]
+    entry_open = float(entry_bar["open"])
+    entry_high = float(entry_bar["high"])
+    entry_low = float(entry_bar["low"])
+    entry_close = float(entry_bar["close"])
+    entry_volume = float(entry_bar["volume"])
+
+    used_fallback_buy_price = False
+    if buy_price is None:
+        buy_price = entry_close
+        used_fallback_buy_price = True
+    else:
+        buy_price = float(buy_price)
+
+    close = pre_df["close"].astype(float)
+    high = pre_df["high"].astype(float)
+    low = pre_df["low"].astype(float)
+    volume = pre_df["volume"].astype(float)
+
+    ma_5 = None
+    if len(close) >= 5:
+        ma_5 = float(close.tail(5).mean())
+
+    ma_20 = None
+    if len(close) >= 20:
+        ma_20 = float(close.tail(20).mean())
+
+    ma_20_slope = None
+    if len(close) >= 40:
+        prev_ma_20 = float(close.iloc[-40:-20].mean())
+        ma_20_slope = _safe_percent_change(ma_20, prev_ma_20)
+
+    rsi_14 = _compute_rsi_from_close(close, period=14)
+
+    ret_1m = None
+    ret_3m = None
+    ret_5m = None
+    ret_20m = None
+
+    if len(close) >= 2:
+        ret_1m = _safe_percent_change(entry_close, close.iloc[-2])
+    if len(close) >= 4:
+        ret_3m = _safe_percent_change(entry_close, close.iloc[-4])
+    if len(close) >= 6:
+        ret_5m = _safe_percent_change(entry_close, close.iloc[-6])
+    if len(close) >= 21:
+        ret_20m = _safe_percent_change(entry_close, close.iloc[-21])
+
+    high_20m = None
+    low_20m = None
+    avg_volume_20m = None
+    if len(pre_df) >= 20:
+        high_20m = float(high.tail(20).max())
+        low_20m = float(low.tail(20).min())
+        avg_volume_20m = float(volume.tail(20).mean())
+
+    entry_vs_open_pct = _safe_percent_change(buy_price, entry_open)
+
+    entry_position_in_bar = None
+    if entry_high > entry_low:
+        entry_position_in_bar = (buy_price - entry_low) / (entry_high - entry_low)
+
+    bar_return_pct = _safe_percent_change(entry_close, entry_open)
+
+    entry_vs_ma20_pct = None
+    if ma_20 is not None:
+        entry_vs_ma20_pct = _safe_percent_change(buy_price, ma_20)
+
+    entry_vs_high20_ratio = None
+    if high_20m is not None and high_20m != 0:
+        entry_vs_high20_ratio = buy_price / high_20m
+
+    range_position_20m = None
+    if high_20m is not None and low_20m is not None and high_20m > low_20m:
+        range_position_20m = (buy_price - low_20m) / (high_20m - low_20m)
+
+    volume_ratio_20m = None
+    if avg_volume_20m is not None and avg_volume_20m > 0:
+        volume_ratio_20m = entry_volume / avg_volume_20m
+
+    if len(pre_df) < 20:
+        insufficient_reasons.append("less_than_20_pre_entry_bars")
+    if ma_20 is None:
+        insufficient_reasons.append("ma20_unavailable")
+    if rsi_14 is None:
+        insufficient_reasons.append("rsi14_unavailable")
+
+    feature_status = "ok"
+    if len(pre_df) < 5:
+        feature_status = "insufficient_data"
+    elif insufficient_reasons:
+        feature_status = "partial"
+
+    return {
+        "feature_status": feature_status,
+        "context_snapshot": {
+            "trade_id": None,
+            "symbol": code,
+            "entry_timestamp": str(buy_time),
+            "entry_price": buy_price,
+            "bar_datetime": str(entry_bar["datetime"]),
+            "open": entry_open,
+            "high": entry_high,
+            "low": entry_low,
+            "close": entry_close,
+            "volume": entry_volume,
+            "used_fallback_buy_price": used_fallback_buy_price,
+        },
+        "features": {
+            "entry_vs_open_pct": entry_vs_open_pct,
+            "entry_position_in_bar": entry_position_in_bar,
+            "bar_return_pct": bar_return_pct,
+            "trade_return_pct": None,
+            "volume_value": entry_volume,
+            "ma_5": ma_5,
+            "ma_20": ma_20,
+            "ma_20_slope": ma_20_slope,
+            "rsi_14": rsi_14,
+            "ret_1m": ret_1m,
+            "ret_3m": ret_3m,
+            "ret_5m": ret_5m,
+            "ret_20m": ret_20m,
+            "high_20m": high_20m,
+            "low_20m": low_20m,
+            "avg_volume_20m": avg_volume_20m,
+            "volume_ratio_20m": volume_ratio_20m,
+            "entry_vs_ma20_pct": entry_vs_ma20_pct,
+            "entry_vs_high20_ratio": entry_vs_high20_ratio,
+            "range_position_20m": range_position_20m,
+            "feature_scope": "real_min1_pre_entry_window",
+            "look_ahead_warning": (
+                "Only rows at or before entry_timestamp were used for entry-decision features. "
+                "Post-entry rows are excluded from label evidence."
+            ),
+        },
+        "insufficient_reasons": insufficient_reasons,
+        "notes": [
+            "This feature set is based on 1-minute OHLCV history.",
+            "Thresholds should be validated across many trades, not fitted to a single ticker.",
+        ],
+    }
+
