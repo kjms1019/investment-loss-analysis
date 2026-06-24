@@ -172,14 +172,13 @@ def run_pipeline(
                 loss_early_ratio=_loss_early_ratio(cycle, raw_trades),
             )
 
-            # 라우팅된 에이전트의 결과를 채택 (psych/stop_fail 은 이미 계산된 것 재사용)
-            if decision.agent_id == registry.AGENT_PSYCH and attribution:
-                result = registry.psych_attribution_to_result(run_id, trade_id, attribution)
-            elif decision.agent_id == registry.AGENT_STOP_LOSS_FAILURE and stop_rep:
+            # 라우팅된 도메인 에이전트 결과 채택 (2-way) + 흡수된 심리 evidence 첨부
+            if decision.agent_id == registry.AGENT_STOP_LOSS_FAILURE and stop_rep:
                 result = registry.stop_fail_report_to_result(run_id, trade_id, stop_rep)
             else:
                 result = registry.run_entry_error(run_id, trade_id, _cycle_data(cycle, raw_trades))
 
+            registry.attach_psych_evidence(result, attribution)
             result.route_reason = decision.reason
             storage.insert_agent_result(result)
             agent_results.append(result)

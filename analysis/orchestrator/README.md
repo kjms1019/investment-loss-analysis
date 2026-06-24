@@ -13,12 +13,12 @@ RawTrade → TradeCycle (사이클 묶기)
  ↓
 psych_agent/focus.py (계좌 전체 심리 귀속)
  ↓
-router.py (규칙 기반 3단계 라우팅)
-  1순위: 심리 패턴 dominant → psych 에이전트
-  2순위: 손절선 이탈 + 2일 이상 버팀 → stop_loss_failure 에이전트
-  3순위: 나머지 → entry_error 에이전트
+router.py (규칙 기반 2-way 라우팅 — 하이브리드 분배)
+  심리 패턴을 두 도메인에 흡수: 리벤지→진입오류, 처분효과→손절실패, 과매매→제외
+  손절실패 신호 = (손절선 이탈 ∧ 2일 이상 버팀) ∨ 처분효과 dominant
+  진입오류 신호 = 리벤지 dominant ∨ 보유 초반 손실 집중
  ↓
-agent_registry.py (에이전트 실행)
+agent_registry.py (도메인 에이전트 실행 + 흡수된 심리 evidence 첨부)
  ↓
 storage.py (SQLite 저장)
 ```

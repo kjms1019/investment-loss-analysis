@@ -35,7 +35,12 @@ _ENTRY_ERROR_MODULES = [
 
 AGENT_ENTRY_ERROR       = "entry_error"
 AGENT_STOP_LOSS_FAILURE = "stop_loss_failure"
-AGENT_PSYCH             = "psych"
+
+# 하이브리드 분배: 각 도메인이 흡수하는 심리 패턴
+PSYCH_PATTERN_BY_AGENT = {
+    AGENT_ENTRY_ERROR:       "revenge",
+    AGENT_STOP_LOSS_FAILURE: "disposition",
+}
 
 
 # ──────────────────────────────────────────────
@@ -120,32 +125,32 @@ def run_entry_error(run_id: str, trade_id: str, cycle_data: Dict[str, Any]) -> A
 
 
 # ──────────────────────────────────────────────
-# 준모: 심리 귀속 결과 → AgentResult
-# (focus.py attribution 은 pipeline 에서 이미 계산 — 패키지라 격리 불필요)
+# 심리 evidence 첨부 (하이브리드: 도메인에 흡수된 심리 패턴)
 # ──────────────────────────────────────────────
 
 _SEVERITY_BY_SCORE = [(0.7, "strong"), (0.4, "moderate"), (0.1, "weak")]
 
 
-def psych_attribution_to_result(run_id: str, trade_id: str, attribution: dict) -> AgentResult:
-    """focus.LossAttribution.to_dict() → AgentResult."""
-    dominant = attribution.get("dominant")
-    sub = attribution.get(dominant, {}) if dominant else {}
+def attach_psych_evidence(result: AgentResult, attribution: Optional[dict]) -> AgentResult:
+    """라우팅된 도메인 에이전트 결과에 흡수된 심리 패턴 신호를 첨부한다.
+
+    entry_error → revenge, stop_loss_failure → disposition (하이브리드 분배).
+    심리 점수(0~3 → 0~1)는 참고용으로 result.result["psych"] 에만 싣고,
+    base 점수(result.score)는 덮어쓰지 않는다.
+    """
+    pattern = PSYCH_PATTERN_BY_AGENT.get(result.agent_id)
+    if not pattern or not attribution:
+        return result
+
+    sub = attribution.get(pattern, {})
     raw = float(sub.get("score", 0.0) or 0.0)        # focus 점수는 0~3 스케일
-    score = round(min(raw / 3.0, 1.0), 4)
-    return AgentResult(
-        run_id=run_id,
-        trade_id=trade_id,
-        agent_id=AGENT_PSYCH,
-        output_status="ok",
-        score=score,
-        severity=_score_to_severity(score),
-        result={
-            "label":    dominant or "none",
-            "evidence": sub.get("evidence", []),
-            "attribution": attribution,
-        },
-    )
+    result.result["psych"] = {
+        "pattern":  pattern,
+        "detected": bool(sub.get("detected", False)),
+        "score":    round(min(raw / 3.0, 1.0), 4),
+        "evidence": sub.get("evidence", []),
+    }
+    return result
 
 
 # ──────────────────────────────────────────────
