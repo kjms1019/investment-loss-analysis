@@ -35,6 +35,11 @@ from . import agent_registry as registry
 from .router import route_cycle
 from .schema import AgentResult, OrchestratorRunResult
 from .storage import DEFAULT_DB_PATH, OrchestratorStorage
+from analysis.user_profile import (
+    DEFAULT_PROFILE_DB_PATH,
+    UserProfileStorage,
+    build_profile,
+)
 
 # 라우터 손절 근사 폴백 임계값 (영현 엔진 신호를 못 얻을 때만 사용)
 _FALLBACK_STOP_PCT = -5.0
@@ -113,6 +118,8 @@ def run_pipeline(
     trade_csv_path: str,
     broker: str = "generic",
     db_path: str = DEFAULT_DB_PATH,
+    user_id: str = "default",
+    profile_db_path: str = DEFAULT_PROFILE_DB_PATH,
 ) -> OrchestratorRunResult:
     """CSV 한 파일을 받아 전체 파이프라인을 실행하고 결과를 반환."""
 
@@ -182,6 +189,16 @@ def run_pipeline(
             result.route_reason = decision.reason
             storage.insert_agent_result(result)
             agent_results.append(result)
+
+        profile_storage = UserProfileStorage(db_path=profile_db_path)
+        try:
+            profile_storage.insert_trade_labels(user_id, agent_results)
+            profile_storage.upsert_profile(
+                build_profile(user_id, agent_results),
+                latest_run_id=run_id,
+            )
+        finally:
+            profile_storage.close()
 
         storage.complete_run(run_id=run_id, status="completed")
         status = "completed"
