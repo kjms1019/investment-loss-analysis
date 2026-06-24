@@ -87,7 +87,8 @@ class OrchestratorStorage:
                 score REAL,
                 severity TEXT,
                 result_json TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (run_id, trade_id, agent_id)
             )
             """
         )
@@ -177,9 +178,13 @@ class OrchestratorStorage:
         self.conn.commit()
 
     def insert_agent_result(self, result: AgentResult) -> None:
+        """결과 1건 적재. 같은 (run_id, trade_id, agent_id) 는 덮어쓴다(중복 누적 방지).
+
+        commit 하지 않는다 — 호출자가 run 종료 시 complete_run() 에서 일괄 커밋한다.
+        """
         self.conn.execute(
             """
-            INSERT INTO agent_results
+            INSERT OR REPLACE INTO agent_results
             (run_id, trade_id, agent_id, route_reason, output_status, score,
              severity, result_json)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -195,7 +200,6 @@ class OrchestratorStorage:
                 json.dumps(result.result, ensure_ascii=False),
             ),
         )
-        self.conn.commit()
 
     def get_batch_id_for_run(self, run_id: str) -> Optional[str]:
         row = self.conn.execute(

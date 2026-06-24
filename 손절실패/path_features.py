@@ -5,7 +5,9 @@ from config import Config, DEFAULT_CONFIG
 
 
 def _compute_atr(ohlcv_days: list, period: int) -> Optional[float]:
-    """Simple average TR (Wilder uses EWM; close enough for daily resolution)."""
+    """Wilder's ATR (RMA smoothing). Seeds with the first `period` TRs' SMA,
+    then applies ATR_t = (ATR_{t-1} * (period-1) + TR_t) / period.
+    Falls back to a plain mean when there aren't enough bars."""
     if len(ohlcv_days) < 2:
         return None
     trs = []
@@ -15,8 +17,13 @@ def _compute_atr(ohlcv_days: list, period: int) -> Optional[float]:
         trs.append(max(h - l, abs(h - prev_close), abs(l - prev_close)))
     if not trs:
         return None
-    recent = trs[-period:] if len(trs) >= period else trs
-    return sum(recent) / len(recent)
+    if len(trs) < period:
+        return sum(trs) / len(trs)
+
+    atr = sum(trs[:period]) / period          # seed = SMA of first `period` TRs
+    for tr in trs[period:]:                    # Wilder recursive smoothing
+        atr = (atr * (period - 1) + tr) / period
+    return atr
 
 
 def _determine_stop_line(

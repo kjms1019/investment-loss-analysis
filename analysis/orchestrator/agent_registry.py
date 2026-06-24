@@ -1,184 +1,163 @@
-"""에이전트 어댑터 레지스트리.
+"""에이전트 실행 어댑터.
 
-각 에이전트를 오케스트레이터 인터페이스에 연결한다.
-common/adapters.py의 출력 변환을 활용해 AgentResult 형식을 통일한다.
+각 에이전트를 격리 로더(`_agent_loader`)로 안전하게 호출하고, 결과를
+오케스트레이터 공통 `AgentResult` 로 변환한다.
+
+핵심 설계:
+- 영현(손절실패)·준모(심리)는 LLM 없이 룰로 점수를 내므로 라우팅 신호 계산용으로
+  전체를 한 번 돌려도 토큰 비용이 없다. 따라서 pipeline 이 이들을 1회 실행하고
+  결과를 재사용한다. (entry_error 만 라우팅된 사이클에 대해 개별 호출)
 """
 
 from __future__ import annotations
 
-import sys
-import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List
 
-from .router import AGENT_ENTRY_ERROR, AGENT_PSYCH, AGENT_STOP_LOSS_FAILURE
 from .schema import AgentResult
+from ._agent_loader import vendored_agent
 
-# 프로젝트 루트를 sys.path에 추가 (각 에이전트 디렉토리 import용)
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_ENTRY_ERROR_DIR = _PROJECT_ROOT / "entry-error-agent"
-_STOP_FAIL_DIR   = _PROJECT_ROOT / "손절실패"
+# 프로젝트 루트 및 에이전트 폴더
+_PROJECT_ROOT     = Path(__file__).resolve().parents[2]
+_ENTRY_ERROR_DIR  = _PROJECT_ROOT / "entry-error-agent"
+_STOP_FAIL_DIR    = _PROJECT_ROOT / "손절실패"
 
-for _p in [str(_PROJECT_ROOT), str(_ENTRY_ERROR_DIR), str(_STOP_FAIL_DIR)]:
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+# 각 vendored 에이전트가 점유하는 최상위 모듈명 (격리 대상)
+_STOP_FAIL_MODULES = [
+    "agent", "schema", "config", "cycles", "path_features",
+    "rules", "scoring", "report", "data_loader",
+]
+_ENTRY_ERROR_MODULES = [
+    "src", "src.feature_engineering", "src.min1_classifier",
+    "src.min1_labeler", "src.data_loader", "src.data_quality",
+    "src.schema_mapper", "src.entry_classifier",
+]
 
-
-class AgentAdapter:
-    agent_id: str = "base"
-
-    def run(self, run_id: str, trade_id: str, cycle_data: Dict[str, Any]) -> AgentResult:
-        raise NotImplementedError
+AGENT_ENTRY_ERROR       = "entry_error"
+AGENT_STOP_LOSS_FAILURE = "stop_loss_failure"
+AGENT_PSYCH             = "psych"
 
 
 # ──────────────────────────────────────────────
-# 수빈: 진입오류 에이전트
+# 영현: 손절실패 엔진 (전체 1회 실행 — 룰, 토큰 0)
 # ──────────────────────────────────────────────
 
-class EntryErrorAdapter(AgentAdapter):
-    agent_id = AGENT_ENTRY_ERROR
+def run_stop_fail_engine(transactions_kwargs: List[Dict[str, Any]]) -> List[dict]:
+    """손절실패 엔진을 전체 거래에 대해 1회 실행하고 사이클별 리포트 리스트 반환.
 
-    def run(self, run_id: str, trade_id: str, cycle_data: Dict[str, Any]) -> AgentResult:
-        try:
-            from src.feature_engineering import build_feature_result
-            from src.min1_classifier import classify_min1_market_state
-            from src.min1_labeler import classify_min1_entry_labels, score_min1_labels
+    Args:
+        transactions_kwargs: common.adapters.to_younghyun_transaction() 결과 dict 리스트
+    """
+    with vendored_agent(_STOP_FAIL_DIR, _STOP_FAIL_MODULES):
+        from agent import analyze_real      # type: ignore
+        from schema import Transaction      # type: ignore
+
+        txns = [Transaction(**t) for t in transactions_kwargs]
+        return analyze_real(txns)
+
+
+def stop_fail_report_to_result(run_id: str, trade_id: str, report: dict) -> AgentResult:
+    """손절실패 리포트 dict → AgentResult."""
+    score = float(report.get("score", 0.0) or 0.0)
+    return AgentResult(
+        run_id=run_id,
+        trade_id=trade_id,
+        agent_id=AGENT_STOP_LOSS_FAILURE,
+        output_status="ok",
+        score=round(score, 4),
+        severity=_score_to_severity(score),
+        result={
+            "label":     report.get("judgment_type", "해당없음"),
+            "narrative": report.get("narrative", ""),
+            "signals":   report.get("signals", {}),
+            "flags":     report.get("flags", {}),
+        },
+    )
+
+
+# ──────────────────────────────────────────────
+# 수빈: 진입오류 에이전트 (라우팅된 사이클만 개별 호출)
+# ──────────────────────────────────────────────
+
+def run_entry_error(run_id: str, trade_id: str, cycle_data: Dict[str, Any]) -> AgentResult:
+    try:
+        with vendored_agent(_ENTRY_ERROR_DIR, _ENTRY_ERROR_MODULES):
+            from src.feature_engineering import build_feature_result   # type: ignore
+            from src.min1_classifier import classify_min1_market_state  # type: ignore
+            from src.min1_labeler import (                              # type: ignore
+                classify_min1_entry_labels, score_min1_labels,
+            )
 
             feature_result = build_feature_result(cycle_data)
             state_result   = classify_min1_market_state(feature_result)
             labels         = classify_min1_entry_labels(feature_result, state_result)
-            risk            = score_min1_labels(labels)
+            risk           = score_min1_labels(labels)
 
-            triggered = [l for l in labels if l.get("triggered") and l["label_id"] not in (
-                "normal_entry", "insufficient_data", "low_confidence",
-                "raw_data_absent", "pre_entry_history_short", "feature_missing_or_invalid",
-            )]
-            top_label = triggered[0]["label_id"] if triggered else "normal_entry"
-            raw_score = risk.get("entry_error_risk_score", 0)
+        skip = {
+            "normal_entry", "insufficient_data", "low_confidence",
+            "raw_data_absent", "pre_entry_history_short", "feature_missing_or_invalid",
+        }
+        triggered = [l for l in labels if l.get("triggered") and l["label_id"] not in skip]
+        top_label = triggered[0]["label_id"] if triggered else "normal_entry"
+        raw_score = risk.get("entry_error_risk_score", 0) or 0
 
-            return AgentResult(
-                run_id=run_id,
-                trade_id=trade_id,
-                agent_id=self.agent_id,
-                output_status="ok",
-                score=round(raw_score / 100, 4),
-                severity=risk.get("severity"),
-                route_reason="",
-                result={
-                    "label": top_label,
-                    "risk_score_result": risk,
-                    "state_classification": state_result,
-                    "label_results": labels,
-                },
-            )
-        except Exception as e:
-            return _error_result(run_id, trade_id, self.agent_id, e)
-
-
-# ──────────────────────────────────────────────
-# 영현: 손절실패 에이전트
-# ──────────────────────────────────────────────
-
-class StopFailAdapter(AgentAdapter):
-    agent_id = AGENT_STOP_LOSS_FAILURE
-
-    def run(self, run_id: str, trade_id: str, cycle_data: Dict[str, Any]) -> AgentResult:
-        try:
-            from agent import analyze_real
-            from schema import Transaction
-
-            transactions = [Transaction(**t) for t in cycle_data.get("transactions", [])]
-            reports = analyze_real(transactions)
-            report  = reports[0] if reports else {}
-
-            return AgentResult(
-                run_id=run_id,
-                trade_id=trade_id,
-                agent_id=self.agent_id,
-                output_status="ok",
-                score=round(float(report.get("score", 0.0)), 4),
-                severity=_score_to_severity(report.get("score", 0.0)),
-                route_reason="",
-                result={
-                    "label": report.get("judgment_type", "해당없음"),
-                    "narrative": report.get("narrative", ""),
-                    "signals": report.get("signals", {}),
-                    "flags": report.get("flags", {}),
-                },
-            )
-        except Exception as e:
-            return _error_result(run_id, trade_id, self.agent_id, e)
+        return AgentResult(
+            run_id=run_id,
+            trade_id=trade_id,
+            agent_id=AGENT_ENTRY_ERROR,
+            output_status="ok",
+            score=round(raw_score / 100, 4),
+            severity=risk.get("severity"),
+            result={
+                "label": top_label,
+                "risk_score_result": risk,
+                "state_classification": state_result,
+                "label_results": labels,
+            },
+        )
+    except Exception as e:
+        return _error_result(run_id, trade_id, AGENT_ENTRY_ERROR, e)
 
 
 # ──────────────────────────────────────────────
-# 준모: 심리 에이전트
+# 준모: 심리 귀속 결과 → AgentResult
+# (focus.py attribution 은 pipeline 에서 이미 계산 — 패키지라 격리 불필요)
 # ──────────────────────────────────────────────
 
-class PsychAdapter(AgentAdapter):
-    agent_id = AGENT_PSYCH
-
-    def run(self, run_id: str, trade_id: str, cycle_data: Dict[str, Any]) -> AgentResult:
-        try:
-            import pandas as pd
-            from psych_agent.agent import run as psych_run
-            from common.schema import severity_to_score
-
-            df = pd.DataFrame(cycle_data.get("trades", []))
-            df["datetime"] = pd.to_datetime(df["datetime"])
-            report_obj = psych_run(df)
-            report     = report_obj.to_dict()
-
-            findings  = report.get("findings", [])
-            detected  = [f for f in findings if f.get("detected")]
-            top       = max(detected, key=lambda f: severity_to_score(f.get("severity", "none")), default={})
-            score     = severity_to_score(top.get("severity", "none"))
-            label     = top.get("type", "none")
-            summary   = report.get("diagnosis", {}).get("summary", "")
-
-            return AgentResult(
-                run_id=run_id,
-                trade_id=trade_id,
-                agent_id=self.agent_id,
-                output_status="ok",
-                score=score,
-                severity=top.get("severity", "none"),
-                route_reason="",
-                result={
-                    "label": label,
-                    "summary": summary,
-                    "findings": findings,
-                },
-            )
-        except Exception as e:
-            return _error_result(run_id, trade_id, self.agent_id, e)
+_SEVERITY_BY_SCORE = [(0.7, "strong"), (0.4, "moderate"), (0.1, "weak")]
 
 
-# ──────────────────────────────────────────────
-# 레지스트리
-# ──────────────────────────────────────────────
-
-class AgentRegistry:
-    def __init__(self) -> None:
-        self._adapters: Dict[str, AgentAdapter] = {}
-
-    def register(self, adapter: AgentAdapter) -> None:
-        self._adapters[adapter.agent_id] = adapter
-
-    def get(self, agent_id: str) -> Optional[AgentAdapter]:
-        return self._adapters.get(agent_id)
-
-
-def build_default_registry() -> AgentRegistry:
-    registry = AgentRegistry()
-    registry.register(EntryErrorAdapter())
-    registry.register(StopFailAdapter())
-    registry.register(PsychAdapter())
-    return registry
+def psych_attribution_to_result(run_id: str, trade_id: str, attribution: dict) -> AgentResult:
+    """focus.LossAttribution.to_dict() → AgentResult."""
+    dominant = attribution.get("dominant")
+    sub = attribution.get(dominant, {}) if dominant else {}
+    raw = float(sub.get("score", 0.0) or 0.0)        # focus 점수는 0~3 스케일
+    score = round(min(raw / 3.0, 1.0), 4)
+    return AgentResult(
+        run_id=run_id,
+        trade_id=trade_id,
+        agent_id=AGENT_PSYCH,
+        output_status="ok",
+        score=score,
+        severity=_score_to_severity(score),
+        result={
+            "label":    dominant or "none",
+            "evidence": sub.get("evidence", []),
+            "attribution": attribution,
+        },
+    )
 
 
 # ──────────────────────────────────────────────
 # 헬퍼
 # ──────────────────────────────────────────────
+
+def _score_to_severity(score: float) -> str:
+    for threshold, label in _SEVERITY_BY_SCORE:
+        if score >= threshold:
+            return label
+    return "none"
+
 
 def _error_result(run_id: str, trade_id: str, agent_id: str, exc: Exception) -> AgentResult:
     return AgentResult(
@@ -188,16 +167,5 @@ def _error_result(run_id: str, trade_id: str, agent_id: str, exc: Exception) -> 
         output_status="error",
         score=None,
         severity=None,
-        route_reason="",
         result={"error": str(exc)},
     )
-
-
-def _score_to_severity(score: float) -> str:
-    if score >= 0.7:
-        return "strong"
-    if score >= 0.4:
-        return "moderate"
-    if score >= 0.1:
-        return "weak"
-    return "none"
