@@ -89,3 +89,35 @@ export interface Flow {
   routing: Record<PsychType | "other", number>;
   losses: LossRow[];
 }
+
+// ── 하이브리드 에이전트: 진입오류+리벤지 / 손절실패+처분효과 ─────────────
+export interface PsychAssignment {
+  type_key: "revenge" | "disposition";
+  target_agent_id: string;
+  rationale: string;
+  included: boolean;
+}
+
+export interface HybridAgent {
+  agent_id: "entry_error_psych_hybrid" | "stop_loss_psych_hybrid";
+  base_agent_id: "entry_error" | "stop_loss_failure";
+  score: number;
+  severity: Severity;
+  summary: string;
+  psych_assignments: PsychAssignment[];
+  findings: Finding[];
+  recommendations: string[];
+}
+
+export interface DiscardedPsychFeature {
+  type: "overtrading";
+  label: string;
+  reason: string;
+}
+
+export interface HybridReport {
+  scenario: string;
+  label: string;
+  agents: HybridAgent[];
+  discarded_psych_features: DiscardedPsychFeature[];
+}
