@@ -62,29 +62,45 @@ def to_subin_trade(cycle: TradeCycle) -> dict:
 # ──────────────────────────────────────────────
 
 def from_subin_result(trade_id: str, result: dict[str, Any]) -> AgentResult:
-    """수빈 에이전트 출력 → AgentResult."""
-    raw_score = result.get("entry_error_risk_score", 0)
-    labels = result.get("label_results", [])
-    top_label = labels[0]["label"] if labels else "normal_entry"
+    """수빈 에이전트 출력 → AgentResult.
+
+    result 구조:
+      classification_result["risk_score_result"]["entry_error_risk_score"] (0~100)
+      classification_result["label_results"][i]["label_id"], ["triggered"]
+    """
+    risk = result.get("risk_score_result", {})
+    raw_score = risk.get("entry_error_risk_score") or 0
+
+    triggered = [l for l in result.get("label_results", []) if l.get("triggered")]
+    top_label = triggered[0]["label_id"] if triggered else "normal_entry"
+
+    severity = risk.get("severity", "")
+    summary = f"진입오류 위험점수 {raw_score}/100 (severity: {severity})"
 
     return AgentResult(
         agent_type="entry_error",
         trade_id=trade_id,
         score=round(raw_score / 100, 4),
         label=top_label,
-        summary=result.get("summary", ""),
+        summary=summary,
         details=result,
     )
 
 
 def from_younghyun_result(trade_id: str, result: dict[str, Any]) -> AgentResult:
-    """영현 에이전트 출력 → AgentResult."""
+    """영현 에이전트 출력 → AgentResult.
+
+    result 구조:
+      result["score"] (0~1)
+      result["judgment_type"]: "물타기형" | "지연형" | "해당없음"
+      result["narrative"]: 자연어 요약
+    """
     return AgentResult(
         agent_type="stop_fail",
         trade_id=trade_id,
         score=round(float(result.get("score", 0.0)), 4),
-        label=result.get("verdict_type", "normal"),
-        summary=result.get("summary", ""),
+        label=result.get("judgment_type", "해당없음"),
+        summary=result.get("narrative", ""),
         details=result,
     )
 
@@ -92,14 +108,19 @@ def from_younghyun_result(trade_id: str, result: dict[str, Any]) -> AgentResult:
 def from_junmo_result(trade_id: str, result: dict[str, Any]) -> AgentResult:
     """준모 에이전트 출력 → AgentResult.
 
-    TypeFinding severity → 0~1 점수 변환.
-    여러 패턴 중 가장 강한 severity를 대표 점수로 사용.
+    result 구조 (PsychReport.to_dict()):
+      result["findings"][i]["type"], ["severity"], ["detected"]
+      result["diagnosis"]
+
+    감지된 패턴 중 severity가 가장 강한 것을 대표로 사용.
     """
     findings = result.get("findings", [])
-    top = max(findings, key=lambda f: severity_to_score(f.get("severity", "none")), default={})
+    detected = [f for f in findings if f.get("detected")]
+    top = max(detected, key=lambda f: severity_to_score(f.get("severity", "none")), default={})
+
     score = severity_to_score(top.get("severity", "none"))
-    label = top.get("type_key", "none")
-    summary = result.get("summary", "")
+    label = top.get("type", "none")
+    summary = result.get("diagnosis", {}).get("summary", "")
 
     return AgentResult(
         agent_type="psych",
