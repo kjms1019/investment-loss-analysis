@@ -1,7 +1,4 @@
-"""orchestrator.router — 2-way 라우팅 단위 테스트.
-
-하이브리드 분배: 리벤지→진입오류, 처분효과→손절실패, 과매매→제외.
-"""
+"""orchestrator.router — classifier scores + primary routing policy tests."""
 
 from analysis.orchestrator.router import (
     AGENT_ENTRY_ERROR,
@@ -10,55 +7,58 @@ from analysis.orchestrator.router import (
 )
 
 
-def test_disposition_routes_to_stop_loss():
+def test_disposition_routes_to_stop_loss_primary():
     d = route_cycle("t1", psych_dominant="disposition",
                     breached=False, delay_days=0, loss_early_ratio=None)
     assert d.agent_id == AGENT_STOP_LOSS_FAILURE
+    assert d.route_type == "single_primary"
+    assert d.profile_eligible is True
 
 
-def test_revenge_routes_to_entry_error():
+def test_revenge_routes_to_entry_error_primary():
     d = route_cycle("t2", psych_dominant="revenge",
                     breached=False, delay_days=0, loss_early_ratio=None)
     assert d.agent_id == AGENT_ENTRY_ERROR
+    assert d.route_type == "single_primary"
 
 
-def test_overtrading_is_ignored_falls_to_default():
-    # 과매매는 도메인 매핑 없음 → 손절 행동 없으니 기본(미이탈) entry_error
+def test_overtrading_without_trade_signal_abstains():
     d = route_cycle("t3", psych_dominant="overtrading",
                     breached=False, delay_days=0, loss_early_ratio=None)
-    assert d.agent_id == AGENT_ENTRY_ERROR
+    assert d.route_status == "abstained"
+    assert d.route_type == "abstain"
 
 
 def test_stop_behavior_routes_to_stop_loss():
     d = route_cycle("t4", psych_dominant=None,
                     breached=True, delay_days=3, loss_early_ratio=None)
     assert d.agent_id == AGENT_STOP_LOSS_FAILURE
+    assert d.route_type == "single_primary"
 
 
-def test_breached_short_delay_defaults_to_stop():
-    # 이탈은 했으나 1일만 버팀 → 손절 도메인이 분석 (영현이 정상손절로 판정)
+def test_breached_short_delay_uses_minute_policy():
     d = route_cycle("t5", psych_dominant=None,
                     breached=True, delay_days=1, loss_early_ratio=None)
     assert d.agent_id == AGENT_STOP_LOSS_FAILURE
-    assert d.reason == "default_breached"
+    assert d.reason.startswith("primary_stop_loss_failure")
 
 
-def test_no_signal_defaults_to_entry_error():
+def test_no_signal_abstains_instead_of_defaulting():
     d = route_cycle("t6", psych_dominant=None,
                     breached=False, delay_days=0, loss_early_ratio=None)
-    assert d.agent_id == AGENT_ENTRY_ERROR
-    assert d.reason == "default_entry_error"
+    assert d.route_status == "abstained"
 
 
 def test_early_loss_routes_to_entry_error():
     d = route_cycle("t7", psych_dominant=None,
                     breached=False, delay_days=0, loss_early_ratio=0.8)
     assert d.agent_id == AGENT_ENTRY_ERROR
+    assert d.route_type == "single_primary"
 
 
-def test_both_signals_stop_behavior_wins():
-    # 손절선 이탈+버팀(행동 증거) + 리벤지(진입 심리) → 손절 우선
+def test_both_signals_choose_primary_and_record_secondary():
     d = route_cycle("t8", psych_dominant="revenge",
                     breached=True, delay_days=4, loss_early_ratio=None)
     assert d.agent_id == AGENT_STOP_LOSS_FAILURE
-    assert d.reason == "both_signals_stop_behavior_wins"
+    assert d.route_type == "single_primary_with_secondary"
+    assert d.secondary_factors == [AGENT_ENTRY_ERROR]

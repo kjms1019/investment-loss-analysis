@@ -1,48 +1,306 @@
-"""사이클 단위 2-way 규칙 기반 라우터.
+"""Classifier scores and top-level routing policy.
 
-하이브리드 구조 채택: 심리 3패턴을 두 도메인에 흡수해 2-way로 라우팅한다.
-  - 리벤지   → 진입오류 도메인 (손실 직후 충동 재진입 = 진입 결정 붕괴)
-  - 처분효과 → 손절실패 도메인 (손실 오래 보유 = 손절 실패의 심리 원인)
-  - 과매매   → 제외 (계좌 전체 습관 문제, 개별 사이클에 귀속하지 않음)
+The classifier no longer chooses an agent directly. It produces comparable
+entry-error and stop-loss-failure candidate scores. The orchestrator policy then
+chooses one primary agent and records secondary factors as evidence.
 
-판정:
-  손절실패 신호  = (손절선 이탈 ∧ 2거래일 이상 버팀) ∨ 처분효과 dominant
-  진입오류 신호  = 리벤지 dominant ∨ 보유 초반 손실 집중
-  둘 다 / 둘 다 아님일 때는 더 구체적인 행동 증거(손절선 이탈)를 우선한다.
+All temporary behavioral thresholds below are expressed in a 1-minute-friendly
+language so the same concepts can be reused by the live monitor. Batch data that
+only has day-level stop information is converted to minutes at the pipeline edge.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import asdict, dataclass, field
+from typing import Any, Dict, List, Optional
 
-AGENT_ENTRY_ERROR       = "entry_error"
+AGENT_ENTRY_ERROR = "entry_error"
 AGENT_STOP_LOSS_FAILURE = "stop_loss_failure"
 
-# 심리 dominant → 도메인 매핑 (하이브리드 분배 기준)
-_PSYCH_TO_DOMAIN = {
-    "revenge":     AGENT_ENTRY_ERROR,
-    "disposition": AGENT_STOP_LOSS_FAILURE,
-    # "overtrading" 은 의도적으로 제외 (라우팅에 영향 없음)
-}
+TRADING_MINUTES_PER_DAY = 390
+
+
+@dataclass(frozen=True)
+class MinuteFeatureThresholds:
+    """Baseline 1-minute thresholds that must be calibrated with real data."""
+
+    # Entry-error feature thresholds
+    range_upper_entry: float = 0.85
+    range_upper_weak_flow: float = 0.75
+    near_high_ratio: float = 0.992
+    ret_20m_overheat: float = 0.012
+    rsi_overheat: float = 68.0
+    volume_weak_ratio: float = 0.80
+    volume_dry_ratio: float = 0.75
+    ma20_down_slope: float = -0.002
+    ret_5m_pullback: float = -0.004
+    loss_early_ratio_primary: float = 0.70
+
+    # Stop-loss-failure thresholds, expressed for minute-level monitoring.
+    breach_warn_minutes: int = 30
+    breach_severe_minutes: int = 60
+    loss_expansion_warn_pp: float = 1.5
+    loss_expansion_severe_pp: float = 3.0
+    loss_expansion_warn_ratio: float = 1.5
+    loss_expansion_severe_ratio: float = 2.0
+    avg_down_warn_count: int = 1
+    avg_down_severe_count: int = 2
+    avg_down_severe_qty_ratio: float = 1.0
+    failed_recovery_warn_minutes: int = 30
+
+
+@dataclass(frozen=True)
+class OrchestratorPolicy:
+    """Decision policy used after classifier scores are produced."""
+
+    min_route_score: float = 0.55
+    strong_route_score: float = 0.70
+    min_score_margin: float = 0.15
+    ambiguous_margin: float = 0.10
+    secondary_factor_score: float = 0.45
+    review_min_score: float = 0.45
+    abstain_threshold: float = 0.35
+    profile_update_min_confidence: float = 0.60
+
+
+@dataclass
+class CandidateScores:
+    trade_id: str
+    entry_error_score: float
+    stop_loss_failure_score: float
+    entry_evidence: List[Dict[str, Any]] = field(default_factory=list)
+    stop_evidence: List[Dict[str, Any]] = field(default_factory=list)
+    feature_scope: str = "batch_or_min1"
+
+    def top_agent(self) -> str:
+        if self.stop_loss_failure_score >= self.entry_error_score:
+            return AGENT_STOP_LOSS_FAILURE
+        return AGENT_ENTRY_ERROR
+
+    def second_agent(self) -> str:
+        return (
+            AGENT_ENTRY_ERROR
+            if self.top_agent() == AGENT_STOP_LOSS_FAILURE
+            else AGENT_STOP_LOSS_FAILURE
+        )
+
+    def score_for(self, agent_id: str) -> float:
+        if agent_id == AGENT_STOP_LOSS_FAILURE:
+            return self.stop_loss_failure_score
+        return self.entry_error_score
+
+    def evidence_for(self, agent_id: str) -> List[Dict[str, Any]]:
+        if agent_id == AGENT_STOP_LOSS_FAILURE:
+            return self.stop_evidence
+        return self.entry_evidence
+
+    def to_dict(self) -> dict:
+        return asdict(self)
 
 
 @dataclass
 class CycleRouteDecision:
     trade_id: str
     agent_id: str
-    route_status: str       # "routed"
-    confidence: float       # 0~1
+    route_status: str
+    confidence: float
     reason: str
+    route_type: str = "single_primary"
+    primary_agent: Optional[str] = None
+    secondary_agent: Optional[str] = None
+    secondary_factors: List[str] = field(default_factory=list)
+    classifier_scores: Optional[CandidateScores] = None
+    profile_eligible: bool = False
 
     def to_dict(self) -> dict:
-        return {
-            "trade_id":     self.trade_id,
-            "agent_id":     self.agent_id,
+        data = {
+            "trade_id": self.trade_id,
+            "agent_id": self.agent_id,
             "route_status": self.route_status,
-            "confidence":   self.confidence,
-            "reason":       self.reason,
+            "confidence": self.confidence,
+            "reason": self.reason,
+            "route_type": self.route_type,
+            "primary_agent": self.primary_agent or self.agent_id,
+            "secondary_agent": self.secondary_agent,
+            "secondary_factors": self.secondary_factors,
+            "profile_eligible": self.profile_eligible,
         }
+        if self.classifier_scores is not None:
+            data["classifier_scores"] = self.classifier_scores.to_dict()
+        return data
+
+
+def score_cycle_candidates(
+    trade_id: str,
+    *,
+    psych_dominant: Optional[str],
+    breached: bool,
+    delay_minutes: Optional[int] = None,
+    delay_days: Optional[int] = None,
+    loss_early_ratio: Optional[float],
+    stop_report_score: Optional[float] = None,
+    stop_signals: Optional[dict] = None,
+    entry_min1_score: Optional[float] = None,
+    entry_features: Optional[dict] = None,
+    thresholds: MinuteFeatureThresholds = MinuteFeatureThresholds(),
+) -> CandidateScores:
+    """Produce candidate scores for both failure types.
+
+    Args:
+        entry_min1_score: Optional 0~1 score from the 1-minute entry classifier.
+        stop_report_score: Optional 0~1 score from the stop-loss agent.
+        delay_days: Backward-compatible batch input. Converted to trading minutes.
+    """
+    if delay_minutes is None and delay_days is not None:
+        delay_minutes = int(delay_days * TRADING_MINUTES_PER_DAY)
+    delay_minutes = int(delay_minutes or 0)
+
+    entry_score = 0.0
+    stop_score = 0.0
+    entry_evidence: List[Dict[str, Any]] = []
+    stop_evidence: List[Dict[str, Any]] = []
+
+    if entry_min1_score is not None:
+        contribution = min(max(float(entry_min1_score), 0.0), 1.0) * 0.55
+        entry_score += contribution
+        entry_evidence.append(_ev("entry_min1_score", entry_min1_score, contribution))
+
+    if stop_report_score is not None:
+        contribution = min(max(float(stop_report_score), 0.0), 1.0) * 0.55
+        stop_score += contribution
+        stop_evidence.append(_ev("stop_report_score", stop_report_score, contribution))
+
+    if psych_dominant == "revenge":
+        entry_score += 0.60
+        entry_evidence.append(_ev("psych_dominant", "revenge", 0.60))
+    elif psych_dominant == "disposition":
+        stop_score += 0.60
+        stop_evidence.append(_ev("psych_dominant", "disposition", 0.60))
+
+    if loss_early_ratio is not None:
+        if loss_early_ratio >= thresholds.loss_early_ratio_primary:
+            contribution = 0.60
+        elif loss_early_ratio >= 0.50:
+            contribution = 0.30
+        else:
+            contribution = 0.0
+        if contribution:
+            entry_score += contribution
+            entry_evidence.append(_ev("loss_early_ratio", loss_early_ratio, contribution))
+
+    if entry_features:
+        entry_score += _score_entry_minute_features(entry_features, thresholds, entry_evidence)
+
+    if breached:
+        stop_score += 0.25
+        stop_evidence.append(_ev("stop_breached", True, 0.25))
+        if delay_minutes >= thresholds.breach_severe_minutes:
+            stop_score += 0.35
+            stop_evidence.append(_ev("breach_minutes", delay_minutes, 0.35))
+        elif delay_minutes >= thresholds.breach_warn_minutes:
+            stop_score += 0.25
+            stop_evidence.append(_ev("breach_minutes", delay_minutes, 0.25))
+
+    if stop_signals:
+        stop_score += _score_stop_minute_features(stop_signals, thresholds, stop_evidence)
+
+    return CandidateScores(
+        trade_id=trade_id,
+        entry_error_score=round(_clamp(entry_score), 4),
+        stop_loss_failure_score=round(_clamp(stop_score), 4),
+        entry_evidence=entry_evidence,
+        stop_evidence=stop_evidence,
+    )
+
+
+def decide_primary_route(
+    scores: CandidateScores,
+    *,
+    policy: OrchestratorPolicy = OrchestratorPolicy(),
+) -> CycleRouteDecision:
+    """Choose one primary route and preserve secondary evidence."""
+    top = scores.top_agent()
+    second = scores.second_agent()
+    top_score = scores.score_for(top)
+    second_score = scores.score_for(second)
+    margin = top_score - second_score
+
+    if top_score < policy.abstain_threshold:
+        return _decision(
+            scores,
+            AGENT_ENTRY_ERROR,
+            "abstain_low_signal",
+            confidence=round(top_score, 4),
+            route_type="abstain",
+            secondary_agent=None,
+            policy=policy,
+        )
+
+    if top_score >= policy.min_route_score and margin >= policy.min_score_margin:
+        route_type = "single_primary"
+        secondary = None
+        factors: List[str] = []
+        if second_score >= policy.secondary_factor_score:
+            route_type = "single_primary_with_secondary"
+            secondary = second
+            factors = [second]
+        return _decision(
+            scores,
+            top,
+            f"primary_{top}_margin_{margin:.2f}",
+            confidence=_confidence(top_score, margin),
+            route_type=route_type,
+            secondary_agent=secondary,
+            secondary_factors=factors,
+            policy=policy,
+        )
+
+    if top_score >= policy.min_route_score and second_score >= policy.min_route_score:
+        return _decision(
+            scores,
+            top,
+            f"primary_{top}_with_secondary_{second}_balanced_scores",
+            confidence=_confidence(top_score, margin),
+            route_type="single_primary_with_secondary",
+            secondary_agent=second,
+            secondary_factors=[second],
+            policy=policy,
+        )
+
+    if top_score >= policy.review_min_score and margin <= policy.ambiguous_margin:
+        return _decision(
+            scores,
+            top,
+            f"review_required_ambiguous_margin_{margin:.2f}",
+            confidence=_confidence(top_score, margin),
+            route_type="review_required",
+            secondary_agent=second,
+            secondary_factors=[second],
+            policy=policy,
+        )
+
+    if top_score >= policy.min_route_score:
+        return _decision(
+            scores,
+            top,
+            f"primary_{top}_weak_margin_{margin:.2f}",
+            confidence=_confidence(top_score, margin),
+            route_type="single_primary_with_secondary",
+            secondary_agent=second if second_score >= policy.secondary_factor_score else None,
+            secondary_factors=[second] if second_score >= policy.secondary_factor_score else [],
+            policy=policy,
+        )
+
+    return _decision(
+        scores,
+        top,
+        f"review_required_mid_signal_{top_score:.2f}",
+        confidence=_confidence(top_score, margin),
+        route_type="review_required",
+        secondary_agent=second if second_score >= policy.secondary_factor_score else None,
+        secondary_factors=[second] if second_score >= policy.secondary_factor_score else [],
+        policy=policy,
+    )
 
 
 def route_cycle(
@@ -50,70 +308,146 @@ def route_cycle(
     *,
     psych_dominant: Optional[str],
     breached: bool,
-    delay_days: int,
+    delay_days: int = 0,
+    delay_minutes: Optional[int] = None,
     loss_early_ratio: Optional[float],
+    stop_report_score: Optional[float] = None,
+    stop_signals: Optional[dict] = None,
+    entry_min1_score: Optional[float] = None,
+    entry_features: Optional[dict] = None,
 ) -> CycleRouteDecision:
-    """완결된 손실 사이클 하나를 entry_error / stop_loss_failure 중 하나로 라우팅.
-
-    Args:
-        psych_dominant  : focus.py dominant ('revenge'|'overtrading'|'disposition'|None)
-        breached        : 손절선 이탈 여부
-        delay_days      : 이탈 후 보유 영업일 수
-        loss_early_ratio: 보유 초반 20% 구간 손실 비율 (분봉 없으면 None)
-    """
-    psych_domain = _PSYCH_TO_DOMAIN.get(psych_dominant or "")
-
-    stop_behavior  = breached and delay_days >= 2
-    entry_behavior = loss_early_ratio is not None and loss_early_ratio >= 0.7
-
-    stop_signal  = stop_behavior or psych_domain == AGENT_STOP_LOSS_FAILURE
-    entry_signal = entry_behavior or psych_domain == AGENT_ENTRY_ERROR
-
-    # 1) 손절실패 신호만
-    if stop_signal and not entry_signal:
-        return _decide(trade_id, AGENT_STOP_LOSS_FAILURE, 0.72,
-                       _stop_reason(stop_behavior, psych_domain, delay_days))
-
-    # 2) 진입오류 신호만
-    if entry_signal and not stop_signal:
-        return _decide(trade_id, AGENT_ENTRY_ERROR, 0.68,
-                       _entry_reason(entry_behavior, psych_domain, loss_early_ratio))
-
-    # 3) 둘 다 → 손절선 이탈(행동 증거)이 있으면 손절실패 우선
-    if stop_signal and entry_signal:
-        if stop_behavior:
-            return _decide(trade_id, AGENT_STOP_LOSS_FAILURE, 0.60,
-                           "both_signals_stop_behavior_wins")
-        return _decide(trade_id, AGENT_ENTRY_ERROR, 0.55, "both_signals_entry_wins")
-
-    # 4) 둘 다 없음 → 손절선 이탈 여부로 기본 분기
-    if breached:
-        return _decide(trade_id, AGENT_STOP_LOSS_FAILURE, 0.45, "default_breached")
-    return _decide(trade_id, AGENT_ENTRY_ERROR, 0.45, "default_entry_error")
+    """Backward-compatible route entry point used by the pipeline and tests."""
+    scores = score_cycle_candidates(
+        trade_id,
+        psych_dominant=psych_dominant,
+        breached=breached,
+        delay_minutes=delay_minutes,
+        delay_days=delay_days,
+        loss_early_ratio=loss_early_ratio,
+        stop_report_score=stop_report_score,
+        stop_signals=stop_signals,
+        entry_min1_score=entry_min1_score,
+        entry_features=entry_features,
+    )
+    return decide_primary_route(scores)
 
 
-# ──────────────────────────────────────────────
-# 헬퍼
-# ──────────────────────────────────────────────
+def _score_entry_minute_features(
+    features: dict,
+    thresholds: MinuteFeatureThresholds,
+    evidence: List[Dict[str, Any]],
+) -> float:
+    score = 0.0
+    if _ge(features.get("range_position_20m"), thresholds.range_upper_entry):
+        score += 0.10
+        evidence.append(_ev("range_position_20m", features.get("range_position_20m"), 0.10))
+    if _ge(features.get("entry_vs_high20_ratio"), thresholds.near_high_ratio):
+        score += 0.10
+        evidence.append(_ev("entry_vs_high20_ratio", features.get("entry_vs_high20_ratio"), 0.10))
+    if _ge(features.get("ret_20m"), thresholds.ret_20m_overheat):
+        score += 0.10
+        evidence.append(_ev("ret_20m", features.get("ret_20m"), 0.10))
+    if _ge(features.get("rsi_14"), thresholds.rsi_overheat):
+        score += 0.08
+        evidence.append(_ev("rsi_14", features.get("rsi_14"), 0.08))
+    if _le(features.get("volume_ratio_20m"), thresholds.volume_weak_ratio):
+        score += 0.07
+        evidence.append(_ev("volume_ratio_20m", features.get("volume_ratio_20m"), 0.07))
+    if _le(features.get("ma_20_slope"), thresholds.ma20_down_slope):
+        score += 0.10
+        evidence.append(_ev("ma_20_slope", features.get("ma_20_slope"), 0.10))
+    if _le(features.get("ret_5m"), thresholds.ret_5m_pullback):
+        score += 0.08
+        evidence.append(_ev("ret_5m", features.get("ret_5m"), 0.08))
+    return min(score, 0.35)
 
-def _decide(trade_id, agent_id, confidence, reason) -> CycleRouteDecision:
+
+def _score_stop_minute_features(
+    signals: dict,
+    thresholds: MinuteFeatureThresholds,
+    evidence: List[Dict[str, Any]],
+) -> float:
+    score = 0.0
+    expansion_pp = signals.get("loss_expansion_pct")
+    expansion_ratio = signals.get("loss_expansion_ratio")
+    avg_down_count = signals.get("avg_down_count_after_loss")
+    avg_down_qty_ratio = signals.get("avg_down_qty_ratio")
+    failed_recovery = signals.get("failed_recovery_minutes")
+
+    if _ge(expansion_pp, thresholds.loss_expansion_severe_pp) or _ge(
+        expansion_ratio, thresholds.loss_expansion_severe_ratio
+    ):
+        score += 0.20
+        evidence.append(_ev("loss_expansion", signals, 0.20))
+    elif _ge(expansion_pp, thresholds.loss_expansion_warn_pp) or _ge(
+        expansion_ratio, thresholds.loss_expansion_warn_ratio
+    ):
+        score += 0.12
+        evidence.append(_ev("loss_expansion", signals, 0.12))
+
+    if _ge(avg_down_count, thresholds.avg_down_severe_count) or _ge(
+        avg_down_qty_ratio, thresholds.avg_down_severe_qty_ratio
+    ):
+        score += 0.15
+        evidence.append(_ev("avg_down", signals, 0.15))
+    elif _ge(avg_down_count, thresholds.avg_down_warn_count):
+        score += 0.08
+        evidence.append(_ev("avg_down", signals, 0.08))
+
+    if _ge(failed_recovery, thresholds.failed_recovery_warn_minutes):
+        score += 0.08
+        evidence.append(_ev("failed_recovery_minutes", failed_recovery, 0.08))
+    return min(score, 0.30)
+
+
+def _decision(
+    scores: CandidateScores,
+    agent_id: str,
+    reason: str,
+    *,
+    confidence: float,
+    route_type: str,
+    policy: OrchestratorPolicy,
+    secondary_agent: Optional[str] = None,
+    secondary_factors: Optional[List[str]] = None,
+) -> CycleRouteDecision:
     return CycleRouteDecision(
-        trade_id=trade_id, agent_id=agent_id,
-        route_status="routed", confidence=confidence, reason=reason,
+        trade_id=scores.trade_id,
+        agent_id=agent_id,
+        route_status="routed" if route_type != "abstain" else "abstained",
+        confidence=round(_clamp(confidence), 4),
+        reason=reason,
+        route_type=route_type,
+        primary_agent=agent_id,
+        secondary_agent=secondary_agent,
+        secondary_factors=secondary_factors or [],
+        classifier_scores=scores,
+        profile_eligible=confidence >= policy.profile_update_min_confidence
+        and route_type in {"single_primary", "single_primary_with_secondary"},
     )
 
 
-def _stop_reason(stop_behavior, psych_domain, delay_days) -> str:
-    if stop_behavior and psych_domain == AGENT_STOP_LOSS_FAILURE:
-        return f"stop_breached_delay_{delay_days}d+disposition"
-    if stop_behavior:
-        return f"stop_breached_delay_{delay_days}d"
-    return "disposition_dominant"
+def _confidence(top_score: float, margin: float) -> float:
+    return _clamp(top_score * 0.75 + min(max(margin, 0.0), 0.4) * 0.625)
 
 
-def _entry_reason(entry_behavior, psych_domain, ratio) -> str:
-    if entry_behavior and psych_domain == AGENT_ENTRY_ERROR:
-        return f"early_loss_{ratio:.2f}+revenge"
-    if entry_behavior:
-        return f"loss_concentrated_early_{ratio:.2f}"
-    return "revenge_dominant"
+def _ev(feature: str, value: Any, contribution: float) -> Dict[str, Any]:
+    return {"feature": feature, "value": value, "contribution": round(contribution, 4)}
+
+
+def _ge(value: Any, threshold: float) -> bool:
+    try:
+        return value is not None and float(value) >= threshold
+    except (TypeError, ValueError):
+        return False
+
+
+def _le(value: Any, threshold: float) -> bool:
+    try:
+        return value is not None and float(value) <= threshold
+    except (TypeError, ValueError):
+        return False
+
+
+def _clamp(value: float) -> float:
+    return max(0.0, min(float(value), 1.0))
