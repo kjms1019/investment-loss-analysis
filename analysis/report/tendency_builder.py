@@ -64,8 +64,9 @@ def build_pattern_facts(summary: LossReportSummary) -> List[PatternFact]:
         taxonomy = lookup_taxonomy(item.agent_id, item.label)
         if taxonomy.tag_key in ("unlabeled", "unclassified"):
             continue  # 분류기가 아직 라벨을 못 뱉은 사이클 — 카드화하지 않는다
-        if item.severity not in taxonomy.match_severities:
-            continue
+        # 라우팅이 분류기 단독이므로, 카드 편입 기준은 profile_eligible(분류기 확신)이다.
+        # agent severity 게이트는 적용하지 않는다(진입/손절 severity 어휘가 다르고,
+        # 분류기가 이미 해당 도메인으로 확신 있게 분류했으므로).
         matched_groups[taxonomy.pattern_key].append(item)
 
     facts: List[PatternFact] = []

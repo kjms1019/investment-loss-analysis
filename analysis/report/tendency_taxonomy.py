@@ -67,6 +67,63 @@ PATTERN_TAXONOMY: dict[str, PatternTaxonomyEntry] = {
         title_hint="20일 신고가권에서 추격 매수",
         correction_hint="급등 직후보다 눌림목에서 분할로 접근하는 거래의 성적이 더 좋습니다.",
     ),
+    # ── 실제 min1_labeler 라벨 (entry-error-agent) ─────────────────────────
+    "entry_error:short_term_overheat": PatternTaxonomyEntry(
+        pattern_key="entry_error.overheat",
+        category="진입오류", category_key="entry_error",
+        tag="단기과열", tag_key="short_term_overheat",
+        title_hint="단기 과열 구간 추격 진입",
+        correction_hint="RSI 과열·단기 급등 구간 추격은 피하고 식는 구간을 기다리세요.",
+    ),
+    "entry_error:weak_flow_near_high": PatternTaxonomyEntry(
+        pattern_key="entry_error.weak_flow_high",
+        category="진입오류", category_key="entry_error",
+        tag="고점추격", tag_key="high_price_chase",
+        title_hint="고점 근처 수급 확인 부족 진입",
+        correction_hint="신고가권에선 거래량 동반을 확인하고 진입하세요.",
+    ),
+    "entry_error:early_pullback_entry": PatternTaxonomyEntry(
+        pattern_key="entry_error.early_pullback",
+        category="진입오류", category_key="entry_error",
+        tag="눌림목", tag_key="pullback",
+        title_hint="지지 확인 없는 눌림목 조기 진입",
+        correction_hint="지지선 반등을 확인한 뒤 진입하세요.",
+    ),
+    "entry_error:unstable_pullback_flow": PatternTaxonomyEntry(
+        pattern_key="entry_error.unstable_pullback",
+        category="진입오류", category_key="entry_error",
+        tag="눌림목", tag_key="pullback",
+        title_hint="수급 불안 눌림목 진입",
+        correction_hint="거래량이 살아날 때까지 기다리세요.",
+    ),
+    "entry_error:premature_bottom_fishing": PatternTaxonomyEntry(
+        pattern_key="entry_error.bottom_fishing",
+        category="진입오류", category_key="entry_error",
+        tag="저가매수", tag_key="bottom_fishing",
+        title_hint="하락 중 성급한 저가 매수",
+        correction_hint="추세 반전 신호 없이 저가 매수를 자제하세요.",
+    ),
+    "entry_error:downtrend_without_reversal": PatternTaxonomyEntry(
+        pattern_key="entry_error.downtrend",
+        category="진입오류", category_key="entry_error",
+        tag="하락추세", tag_key="downtrend",
+        title_hint="반등 확인 없는 하락추세 진입",
+        correction_hint="이평 기울기·반등을 확인하고 진입하세요.",
+    ),
+    "entry_error:range_top_chase": PatternTaxonomyEntry(
+        pattern_key="entry_error.range_top",
+        category="진입오류", category_key="entry_error",
+        tag="박스권", tag_key="range_top",
+        title_hint="박스권 상단 추격 진입",
+        correction_hint="박스 상단보다 하단 지지에서 분할 진입하세요.",
+    ),
+    "entry_error:low_liquidity_range_chase": PatternTaxonomyEntry(
+        pattern_key="entry_error.low_liq_range",
+        category="진입오류", category_key="entry_error",
+        tag="박스권", tag_key="range_top",
+        title_hint="저유동성 박스권 추격 진입",
+        correction_hint="저유동성 종목 추격은 슬리피지 위험이 큽니다.",
+    ),
 }
 
 # label 매칭이 안 될 때 agent_id 단위로만 거는 기본값 (분류기 미완성 구간 보호용).

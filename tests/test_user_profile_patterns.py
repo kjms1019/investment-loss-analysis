@@ -27,8 +27,9 @@ def test_aggregates_by_frequency():
     pats = build_patterns(_sample())
     by_id = {p["pattern_id"]: p for p in pats}
     assert by_id["stop_loss_failure:지연형"]["count"] == 2
-    assert by_id["stop_loss_failure:지연형"]["name_ko"] == "손절선 이탈 후 지연 보유"
-    # 빈도 내림차순
+    # 이름·태그는 공유 taxonomy에서 (심리는 별도 카드 아니라 태그)
+    assert by_id["stop_loss_failure:지연형"]["name_ko"] == "손절선 이탈 후 2일 이상 보유"
+    assert by_id["stop_loss_failure:지연형"]["tag"] == "처분효과"
     assert pats[0]["count"] >= pats[-1]["count"]
 
 
@@ -37,14 +38,17 @@ def test_skips_normal_and_carries_correction():
     ids = {p["pattern_id"] for p in pats}
     assert "entry_error:normal_entry" not in ids          # 정상 라벨 제외
     overheat = next(p for p in pats if p["pattern_id"] == "entry_error:short_term_overheat")
-    assert overheat["correction"]                          # 교정 조언 존재
+    assert overheat["correction"]                          # 교정 조언 존재 (taxonomy)
+    assert overheat["pattern_key"] == "entry_error.overheat"
     assert overheat["representative_trade"] == "d"
 
 
-def test_psych_pattern_detected():
-    pats = build_patterns(_sample(), top_n=10)
-    ids = {p["pattern_id"] for p in pats}
-    assert "stop_loss_failure:psych_disposition" in ids   # 흡수 심리도 패턴으로
+def test_uses_shared_taxonomy():
+    # 패턴 분류체계는 report.tendency_taxonomy 와 동일 소스
+    from analysis.report.tendency_taxonomy import lookup_taxonomy
+    pats = build_patterns(_sample())
+    p = next(x for x in pats if x["pattern_id"] == "stop_loss_failure:물타기형")
+    assert p["pattern_key"] == lookup_taxonomy("stop_loss_failure", "물타기형").pattern_key
 
 
 def test_upsert_and_load_roundtrip(tmp_path):
