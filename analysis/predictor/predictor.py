@@ -312,6 +312,10 @@ class TradeRiskPredictor:
             features=features,
         )
         signal.should_alert = self.notification_policy.should_send(signal)
+        if signal.should_alert:
+            # 알림 발생 시에만 LLM 문장 생성(대량 호출 방지). 키 없으면 룰 템플릿 폴백.
+            from .alert_message import build_alert_message
+            signal.message = build_alert_message(signal)
         return signal
 
     def _persist_if_alert(self, signal: RiskSignal) -> None:

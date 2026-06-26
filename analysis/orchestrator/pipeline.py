@@ -268,6 +268,10 @@ def run_pipeline(
         storage.close()
 
     interaction_state = build_interaction_state(agent_results, loss_cycles).to_dict()
+    # 총괄 대화 문장(LLM). 키 없으면 템플릿 prompt_body 그대로 폴백.
+    from .interaction_llm import llm_interaction_prompt
+    interaction_state["llm_prompt_body"] = llm_interaction_prompt(
+        interaction_state, fallback=interaction_state.get("prompt_body", ""))
 
     return OrchestratorRunResult(
         run_id=run_id, batch_id=batch_id, status=status,
