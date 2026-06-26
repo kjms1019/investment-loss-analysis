@@ -6,14 +6,14 @@
 
 ```
 CSV
- ↓ common/parser.py
+ ↓ analysis/common/parser.py
 RawTrade → TradeCycle (사이클 묶기)
  ↓
 손실 사이클 필터링
  ↓
 psych_agent/focus.py (계좌 전체 심리 귀속)
  ↓
-router.py (규칙 기반 2-way 라우팅 — 하이브리드 분배)
+router.py (규칙 기반 2-way 라우팅)
   심리 패턴을 두 도메인에 흡수: 리벤지→진입오류, 처분효과→손절실패, 과매매→제외
   손절실패 신호 = (손절선 이탈 ∧ 2일 이상 버팀) ∨ 처분효과 dominant
   진입오류 신호 = 리벤지 dominant ∨ 보유 초반 손실 집중
@@ -32,6 +32,23 @@ storage.py (SQLite 저장)
 | `agent_registry.py` | 에이전트 어댑터 + 레지스트리 |
 | `schema.py` | 내부 데이터 계약 |
 | `storage.py` | SQLite 결과 저장 |
+| `INTERACTION_POLICY.md` | 빈도/손실금액 집계 기반 사용자 선택 흐름 |
+
+## 사용자 상호작용 정책
+
+거래별 라우팅이 끝난 뒤 총괄은 문제 도메인별 빈도와 손실금액을 집계한다.
+빈도 1위와 손실금액 1위가 다르면 웹에서 사용자에게 아래 질문을 띄운다.
+
+```
+어떤 문제를 중심으로 분석해볼까요?
+[자주 반복된 문제] [손실 금액이 컸던 문제]
+```
+
+상세 정책은 [`INTERACTION_POLICY.md`](INTERACTION_POLICY.md)에 정리한다.
+
+주의: `analysis/loss_screener`의 `selected`는 1순위 손실 거래뿐 아니라 2순위 기회손실 거래도
+포함할 수 있다. 오케스트레이터가 손실 거래만 대상으로 삼을 때는 현재처럼
+`filter_loss_cycles()`를 쓰거나, loss screener 결과에서 `tier == 1`만 사용해야 한다.
 
 ## 사용법
 

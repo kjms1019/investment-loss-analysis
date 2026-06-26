@@ -19,8 +19,9 @@ from ._agent_loader import vendored_agent
 
 # 프로젝트 루트 및 에이전트 폴더
 _PROJECT_ROOT     = Path(__file__).resolve().parents[2]
-_ENTRY_ERROR_DIR  = _PROJECT_ROOT / "entry-error-agent"
-_STOP_FAIL_DIR    = _PROJECT_ROOT / "손절실패"
+_AGENTS_DIR       = _PROJECT_ROOT / "agents"
+_ENTRY_ERROR_DIR  = _AGENTS_DIR / "entry-error-agent"
+_STOP_FAIL_DIR    = _AGENTS_DIR / "손절실패"
 
 # 각 vendored 에이전트가 점유하는 최상위 모듈명 (격리 대상)
 _STOP_FAIL_MODULES = [
@@ -36,7 +37,7 @@ _ENTRY_ERROR_MODULES = [
 AGENT_ENTRY_ERROR       = "entry_error"
 AGENT_STOP_LOSS_FAILURE = "stop_loss_failure"
 
-# 하이브리드 분배: 각 도메인이 흡수하는 심리 패턴
+# 각 도메인이 흡수하는 심리 패턴
 PSYCH_PATTERN_BY_AGENT = {
     AGENT_ENTRY_ERROR:       "revenge",
     AGENT_STOP_LOSS_FAILURE: "disposition",
@@ -125,7 +126,7 @@ def run_entry_error(run_id: str, trade_id: str, cycle_data: Dict[str, Any]) -> A
 
 
 # ──────────────────────────────────────────────
-# 심리 evidence 첨부 (하이브리드: 도메인에 흡수된 심리 패턴)
+# 심리 evidence 첨부 (도메인에 흡수된 심리 패턴)
 # ──────────────────────────────────────────────
 
 _SEVERITY_BY_SCORE = [(0.7, "strong"), (0.4, "moderate"), (0.1, "weak")]
@@ -134,7 +135,7 @@ _SEVERITY_BY_SCORE = [(0.7, "strong"), (0.4, "moderate"), (0.1, "weak")]
 def attach_psych_evidence(result: AgentResult, attribution: Optional[dict]) -> AgentResult:
     """라우팅된 도메인 에이전트 결과에 흡수된 심리 패턴 신호를 첨부한다.
 
-    entry_error → revenge, stop_loss_failure → disposition (하이브리드 분배).
+    entry_error → revenge, stop_loss_failure → disposition.
     심리 점수(0~3 → 0~1)는 참고용으로 result.result["psych"] 에만 싣고,
     base 점수(result.score)는 덮어쓰지 않는다.
     """

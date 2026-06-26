@@ -4,7 +4,7 @@
 절대손익이 아니라 **시장 영향을 제거한 초과손실(abnormal return)** 로 복기 대상을
 고른다 → 이후 다중분류기 → 진입/손절/심리 에이전트로 라우팅. (심리 에이전트는 그 다음 단계)
 
-> 📖 **선별→심리 귀속→웹 전체 흐름은 [../PIPELINE.md](../PIPELINE.md) 한 문서로 정리돼 있다.**
+> 📖 현재 총괄 흐름은 [../orchestrator/README.md](../orchestrator/README.md)를 기준으로 본다.
 
 ## API 두 가지
 

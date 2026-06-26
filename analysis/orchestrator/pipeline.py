@@ -32,9 +32,15 @@ from common.parser import build_cycles, filter_loss_cycles, parse_csv
 from common.schema import RawTrade, TradeCycle
 
 from . import agent_registry as registry
+from .interaction import build_interaction_state
 from .router import route_cycle
 from .schema import AgentResult, OrchestratorRunResult
 from .storage import DEFAULT_DB_PATH, OrchestratorStorage
+from analysis.user_profile import (
+    DEFAULT_PROFILE_DB_PATH,
+    UserProfileStorage,
+    build_profile,
+)
 
 # 라우터 손절 근사 폴백 임계값 (영현 엔진 신호를 못 얻을 때만 사용)
 _FALLBACK_STOP_PCT = -5.0
@@ -113,6 +119,8 @@ def run_pipeline(
     trade_csv_path: str,
     broker: str = "generic",
     db_path: str = DEFAULT_DB_PATH,
+    user_id: str = "default",
+    profile_db_path: str = DEFAULT_PROFILE_DB_PATH,
 ) -> OrchestratorRunResult:
     """CSV 한 파일을 받아 전체 파이프라인을 실행하고 결과를 반환."""
 
@@ -156,10 +164,14 @@ def run_pipeline(
             psych_dom   = attribution.get("dominant") if attribution else None
 
             stop_rep = stop_reports.get(_stop_fail_key(cycle))
+            stop_score = None
+            stop_signals = None
             if stop_rep:
                 sig        = stop_rep.get("signals", {})
                 breached   = bool(sig.get("breached", False))
                 delay_days = int(sig.get("delay_days", 0))
+                stop_score = float(stop_rep.get("score", 0.0) or 0.0)
+                stop_signals = _minute_stop_signals(sig)
             else:
                 breached   = cycle.realized_pnl_pct < _FALLBACK_STOP_PCT
                 delay_days = 0
@@ -169,10 +181,31 @@ def run_pipeline(
                 psych_dominant=psych_dom,
                 breached=breached,
                 delay_days=delay_days,
+                delay_minutes=delay_days * 390,
                 loss_early_ratio=_loss_early_ratio(cycle, raw_trades),
+                stop_report_score=stop_score,
+                stop_signals=stop_signals,
             )
 
-            # 라우팅된 도메인 에이전트 결과 채택 (2-way) + 흡수된 심리 evidence 첨부
+            # 총괄 판단 결과에 따라 primary 에이전트 하나만 실행한다.
+            if decision.route_type == "abstain":
+                result = AgentResult(
+                    run_id=run_id,
+                    trade_id=trade_id,
+                    agent_id="unclassified",
+                    output_status="skipped",
+                    score=None,
+                    severity=None,
+                    result={
+                        "label": "abstain_low_signal",
+                        "orchestrator_decision": decision.to_dict(),
+                    },
+                    route_reason=decision.reason,
+                )
+                storage.insert_agent_result(result)
+                agent_results.append(result)
+                continue
+
             if decision.agent_id == registry.AGENT_STOP_LOSS_FAILURE and stop_rep:
                 result = registry.stop_fail_report_to_result(run_id, trade_id, stop_rep)
             else:
@@ -180,8 +213,20 @@ def run_pipeline(
 
             registry.attach_psych_evidence(result, attribution)
             result.route_reason = decision.reason
+            result.result["orchestrator_decision"] = decision.to_dict()
+            result.result["secondary_factors"] = decision.secondary_factors
             storage.insert_agent_result(result)
             agent_results.append(result)
+
+        profile_storage = UserProfileStorage(db_path=profile_db_path)
+        try:
+            profile_storage.insert_trade_labels(user_id, agent_results)
+            profile_storage.upsert_profile(
+                build_profile(user_id, agent_results),
+                latest_run_id=run_id,
+            )
+        finally:
+            profile_storage.close()
 
         storage.complete_run(run_id=run_id, status="completed")
         status = "completed"
@@ -192,9 +237,12 @@ def run_pipeline(
     finally:
         storage.close()
 
+    interaction_state = build_interaction_state(agent_results, loss_cycles).to_dict()
+
     return OrchestratorRunResult(
         run_id=run_id, batch_id=batch_id, status=status,
         normalized_count=len(loss_cycles),
+        interaction_state=interaction_state,
         agent_results=agent_results, notes=notes,
     )
 
@@ -238,4 +286,30 @@ def _cycle_data(cycle: TradeCycle, raw_trades: List[RawTrade]) -> dict:
         "qty":              cycle.qty,
         "realized_pnl":     cycle.realized_pnl,
         "realized_pnl_pct": cycle.realized_pnl_pct,
+    }
+
+
+def _minute_stop_signals(signals: dict) -> dict:
+    """Translate stop-loss report signals into minute-level policy fields.
+
+    Current stop-loss reports are mostly day-level. This adapter keeps the new
+    orchestrator policy in minute-oriented terms while preserving compatibility
+    with the batch engine.
+    """
+    stop_pct = abs(float(signals.get("stop_pct", 0.0) or 0.0))
+    mae_pct = abs(float(signals.get("MAE_pct", 0.0) or 0.0))
+    realized = abs(float(signals.get("realized_return_pct", 0.0) or 0.0))
+    delay_days = int(signals.get("delay_days", 0) or 0)
+
+    expansion_pct = max(realized - stop_pct, 0.0)
+    expansion_ratio = realized / stop_pct if stop_pct > 0 else 0.0
+
+    return {
+        "breach_minutes": delay_days * 390,
+        "loss_expansion_pct": expansion_pct,
+        "loss_expansion_ratio": expansion_ratio,
+        "mae_expansion_pct": max(mae_pct - stop_pct, 0.0),
+        "avg_down_count_after_loss": int(signals.get("avg_down_count", 0) or 0),
+        "avg_down_qty_ratio": float(signals.get("avg_down_qty_ratio", 0.0) or 0.0),
+        "failed_recovery_minutes": delay_days * 390 if signals.get("breached") else 0,
     }
