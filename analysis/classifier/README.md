@@ -42,20 +42,20 @@ python -m analysis.classifier.train            # 기본: 설계 합성 검증셋
 python -m analysis.classifier.train --n 8000
 ```
 
-학습 흐름(순환 방지): 결과신호 **군집**으로 라벨 생성 → **진입맥락 피처**로 학습.
+학습 흐름(순환 방지): 결과신호 **군집**으로 라벨 생성 → **전체경로 피처**로 학습.
 산출물: `artifacts/entry_stop_clf.joblib` (+ `.meta.json` — AUC·계수·학습소스).
 
-## ⚠️ 현재 모델은 placeholder
+## 모델 기준 = 랜덤 실데이터
 
-`artifacts/`의 모델은 **설계 합성 검증셋**으로 학습됐다(AUC≈0.97). 실거래 매매내역이 없어
-임시로 둔 것이며, 파이프라인 배선·API 검증용이다. **실거래 라벨이 확보되면 재학습 필요.**
-(설계셋은 파이프라인 작동 검증용 — 실제 시장 구조·임계값 증명엔 못 씀. label_validation README 참고.)
+`artifacts/`의 모델은 **실 KOSPI min1 랜덤샘플 + 군집라벨**로 학습된다(전체경로 피처, **AUC≈0.85**).
+이게 아키텍처 기준이다. **설계 합성(`--source designed`, AUC≈0.97)은 "구조 있으면 작동한다"는
+참고·검증용일 뿐 배포 기준이 아니다.** 실 사용자 거래로그가 확보되면 그걸로 갱신한다.
 
 ## 구조
 
 ```
 model.py     EntryStopClassifier (fit/predict/predict_batch/save/load) + 헬퍼
-train.py     학습 + 영속화 (소스=설계 합성, 실거래 생기면 --source real 추가)
-artifacts/   학습된 모델(.joblib) + 메타(.meta.json)  ← placeholder
+train.py     학습 + 영속화 (--source random=실 min1 랜덤샘플[기본] / designed=참고용)
+artifacts/   학습된 모델(.joblib) + 메타(.meta.json)  ← 랜덤 실데이터 기준
 __init__.py  classify_entry / entry_min1_score / load_default / EntryStopClassifier
 ```

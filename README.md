@@ -37,7 +37,8 @@
 > 그 점수(`classifier_entry_score`/`classifier_stop_score`)로 router가 라우팅한다.
 > 데이터 미지지였던 `loss_early_ratio` 0.7 고정컷 룰은 **제거**(라벨축 자기참조). 룰 점수
 > (`score_cycle_candidates`)는 분류기 미가용(min1 부재) 시 폴백·보조로만.
-> ⚠️ 현재 모델은 **설계합성 placeholder** — 실거래 라벨 확보 시 재학습.
+> 모델은 **실 KOSPI min1 랜덤샘플 + 군집라벨**로 학습(아키텍처 기준, AUC≈0.85). 설계합성은
+> 검증·참고용일 뿐 배포 기준 아님. 실 사용자 거래로그 확보 시 갱신.
 
 ---
 

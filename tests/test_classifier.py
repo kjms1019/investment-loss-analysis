@@ -6,12 +6,14 @@ from analysis.classifier import classify_entry, entry_min1_score, load_default
 from analysis.classifier.model import EntryStopClassifier
 from analysis.label_validation.label_pipeline import FEATURES, CLASSIFIER_FEATURES
 
-# 추격형(진입오류 쪽): 사전 급등·고점근접·추격 거래량
+# 진입오류 케이스(전체피처): 추격 진입 + 손실이 초반에 몰림
+#   (사후피처 — 큰 초반낙폭 mae_ratio↑, 이른 손절선 돌파 breach_time_frac↓, 적은 돌파후하락)
 CHASE = {"rsi_14": 75, "range_position_20": 0.9, "range_position_60": 0.9,
          "ret_5m": 0.01, "ret_20m": 0.03, "ret_60m": 0.06, "ret_120m": 0.10,
          "accel": -0.02, "entry_vs_high20": 0.995, "entry_vs_high60": 0.99,
          "entry_vs_ma20": 0.05, "ma_20_slope": 0.01, "vol_20": 0.004,
-         "vol_60": 0.004, "volume_ratio_20": 1.8}
+         "vol_60": 0.004, "volume_ratio_20": 1.8,
+         "mae_ratio": 1.4, "post_breach_run": 0.1, "breach_time_frac": 0.1}
 
 
 def test_predict_output_shape():
