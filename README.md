@@ -1,30 +1,62 @@
-# mirae_asset_agent — "왜 잃었지?" 복기 시스템
+# mirae_asset_agent — "왜 잃었지?" 복기 + 예측 시스템
 
-완결된 국내주식 거래내역을 분석해 손실 원인을 3가지 에이전트로 진단하고, 같은 실수 반복 시 알림을 제공하는 멀티에이전트 시스템.
+완결된 국내주식 거래내역을 분석해 **손실 원인(진입오류 / 손절실패)** 을 진단하고,
+같은 실수를 반복하려는 순간 **실시간으로 예측·경고**하는 멀티에이전트 시스템.
+
+손실을 2대 도메인으로 라우팅하고(심리 패턴은 두 도메인에 흡수), 분석으로 만든 라벨을
+예측기의 정답으로 삼아 "분석 → 예측"으로 이어진다.
 
 ---
 
-## 전체 구조
+## 두 단계: 분석단 · 예측단
 
 ```
-사용자 거래 CSV
-      ↓
-analysis/common/parser.py (CSV → 사이클 묶기)
-      ↓
-analysis/orchestrator/pipeline.py (손실 필터 → 심리귀속 → 라우팅)
-      ↓
-  ┌───────────────────────────────────┐
-  │  agents/entry-error-agent/ (진입오류) │
-  │  agents/손절실패/          (손절실패) │
-  │  analysis/psych_agent/ (심리패턴) │
-  └───────────────────────────────────┘
-      ↓
-analysis/data/orchestrator.sqlite3 (결과 저장)
-      ↓
-[예측기 - 다음 실수 예측 알림] (개발 예정)
-      ↓
-web/ (Next.js 대시보드)
+[분석단]  과거~오늘 전체 거래를 보고, 끝난 손실거래를 진단
+[예측단]  오늘 일어나는 이벤트를, 그 순간 정보만으로 예측·경고
 ```
+
+분석단은 **전체경로 정보**(거래가 끝난 뒤라 다 안다)로 분류한다.
+예측단은 **현시점 정보만**(미래는 모른다)으로 예측한다. 정답은 분석단 분류 결과.
+
+---
+
+## 분석단 파이프라인 (`analysis/orchestrator/pipeline.py`)
+
+| 단계 | 코드 | 역할 |
+|---|---|---|
+| 1. 파싱 | `common/parser.py` | CSV 체결 → 매수·매도 **사이클** 묶기 |
+| 2. 손실 선별 | `filter_loss_cycles` / `loss_screener/` | 손실 사이클만. (α 시장제거 선별은 `loss_screener`에 있음) |
+| 3. 신호 계산 | `psych_agent/` + `손절실패 엔진` | 심리 귀속(리벤지·처분효과) + 손절선(ATR) 돌파·버팀 신호 |
+| 4. **분류** | `orchestrator/router.py` | 손실거래를 **entry_error / stop_loss_failure** 로 점수화·라우팅 (전체경로 정보 사용) |
+| 5. 총괄 질문 | `orchestrator/interaction.py` | 유형별 **빈도·손실금** 집계 → "자주 반복 vs 손실 큰 것, 뭘 먼저?" 사용자에게 질문 |
+| 6. 도메인 분석 | `agents/entry-error-agent` / `agents/손절실패` | 고른 유형의 거래를 심층 분석·설명 (분류와 **같은 피처** 사용 — 아래) |
+| 7. 반복/저장 | `interaction` + `user_profile/` | "다른 유형도 볼까?" (최대 2회) → 성향·반복패턴 리포트 DB 저장 |
+
+> **현재 분류(4단계)는 룰 기반 점수**(`score_cycle_candidates`)다. 이를 대체/보강할
+> **ML 분류기**는 `analysis/classifier`(런타임) + `analysis/label_validation`(설계·검증)에 있으며,
+> `router`의 `entry_min1_score` 훅으로 연결 예정.
+
+---
+
+## 예측단 (`analysis/predictor/`)
+
+분석단이 만든 라벨을 **정답(teacher)** 으로, 예측기(student)가 **그 순간 정보만**으로 따라 예측한다.
+
+| 예측기 | 이벤트(오늘) | 피처 | 계약 |
+|---|---|---|---|
+| **진입오류 예측기** | 매수하려는 순간 | 진입맥락(RSI·추격·범위위치…) | `EntryContext` → `predict_entry_risk` |
+| **손절실패 예측기** | 보유종목 폭락해 손절선 접근하는 순간 | 현재 포지션(미실현손실·손절선돌파·낙폭·보유시간) | `PositionSnapshot` → `monitor_live_position` |
+
+둘 다 look-ahead 없음(미래 미사용). 설계·검증은 `label_validation`의 step4·step5 참조.
+
+---
+
+## 피처 단일화 (분류 근거 = 분석 근거)
+
+분류기와 **진입오류 에이전트**는 진입맥락 피처를 **단일 캐노니컬 함수**로 공유한다:
+`analysis/label_validation/label_pipeline.entry_features_window()`.
+→ "분류기가 range_position 0.9로 진입오류 판정" ↔ "에이전트가 같은 0.9로 추격매수 설명"이 항상 일치.
+손절실패 에이전트는 보유경로 피처(ATR손절선·breach·MAE)를 쓴다(다른 영역).
 
 ---
 
@@ -32,32 +64,40 @@ web/ (Next.js 대시보드)
 
 | 폴더 | 역할 |
 |---|---|
-| `analysis/common/` | 공통 스키마·파서·어댑터 |
+| `analysis/common/` | 공통 스키마·파서(사이클)·어댑터 |
 | `analysis/loss_screener/` | 시장제거 손실 선별 (α 기준) |
-| `analysis/psych_agent/` | 심리패턴 분석 (리벤지/과매매/처분효과) |
-| `analysis/orchestrator/` | 총괄 오케스트레이터 |
+| `analysis/psych_agent/` | 심리패턴 귀속 (리벤지/처분효과/과매매) |
+| `analysis/orchestrator/` | 총괄 — 라우팅·총괄질문·결과저장 |
+| `analysis/label_validation/` | **분류기·예측기 설계·검증** (step1~5, 공유 피처 코어) |
+| `analysis/classifier/` | **런타임 분류기** — 서비스가 import해 호출 |
+| `analysis/predictor/` | **런타임 예측기** — 진입/보유 두 이벤트 모드 |
+| `analysis/user_profile/` | 성향·반복패턴 프로파일 저장 |
 | `analysis/collector/` | 키움 REST API 1분봉 수집기 |
-| `agents/entry-error-agent/` | 진입오류 에이전트 |
-| `agents/손절실패/` | 손절실패 에이전트 |
-| `web/` | Next.js 대시보드 (Vercel 배포) |
+| `agents/entry-error-agent/` | 진입오류 도메인 에이전트 |
+| `agents/손절실패/` | 손절실패 도메인 에이전트 (ATR 손절선) |
+| `web/` | Next.js 대시보드 |
 
 ---
 
 ## 빠른 시작
 
 ```bash
-# Python 환경 (analysis/)
-cd analysis && source venv/bin/activate
-
-# 오케스트레이터 실행
+# 분석단 파이프라인
 python -c "
-from orchestrator import run_pipeline
-result = run_pipeline('my_trades.csv', broker='kiwoom')
-print(result.to_dict())
+from analysis.orchestrator import run_pipeline
+print(run_pipeline('my_trades.csv', broker='kiwoom').to_dict())
 "
 
+# 분류기 학습/호출
+python -m analysis.classifier.train
+python -c "from analysis.classifier import classify_entry; print(classify_entry({'rsi_14':72,'volume_ratio_20':1.8}))"
+
+# 설계·검증 재현 (step1~5)
+python analysis/label_validation/step1_threshold_check.py --sweep
+python analysis/label_validation/step4_predictor.py
+
 # 웹 대시보드
-cd web && npm install && npm run dev   # http://localhost:3000
+cd web && npm install && npm run dev
 ```
 
 ---
@@ -66,15 +106,16 @@ cd web && npm install && npm run dev   # http://localhost:3000
 
 | 문서 | 내용 |
 |---|---|
+| [analysis/label_validation/README.md](analysis/label_validation/README.md) | **분류기·예측기 설계·검증 + 전체 결과 숫자** |
+| [analysis/classifier/README.md](analysis/classifier/README.md) | 런타임 분류기 API·연동 |
+| [analysis/predictor/README.md](analysis/predictor/README.md) | 런타임 예측기 두 모드 |
 | [analysis/orchestrator/README.md](analysis/orchestrator/README.md) | 오케스트레이터 구조 |
-| [analysis/psych_agent/README.md](analysis/psych_agent/README.md) | 심리 에이전트 |
 | [agents/entry-error-agent/SPEC.md](agents/entry-error-agent/SPEC.md) | 진입오류 에이전트 명세 |
 | [agents/손절실패/DESIGN.md](agents/손절실패/DESIGN.md) | 손절실패 에이전트 설계 |
-| [web/README.md](web/README.md) | 웹 대시보드 |
-| [analysis/README.md](analysis/README.md) | Python 환경 설정 |
 
 ---
 
 ## 데이터
 
-KOSPI 808종목, 1분봉 245거래일분 (약 1년). `analysis/data/` 는 gitignore.
+KOSPI 약 800종목, 1분봉 약 1년치. **GitHub Release**로 배포(`analysis/data/`는 gitignore).
+Release zip을 `analysis/data/`에 풀면 `analysis/data/min1/{code}.parquet` 구조가 된다.

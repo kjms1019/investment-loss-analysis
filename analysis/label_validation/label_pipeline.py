@@ -83,32 +83,85 @@ def outcome_signals(low, close, e, hold):
     return {"loss_early_ratio": ler, "trough_time_frac": ttf, "post_breach_run": run}
 
 
-# ── 진입맥락 피처 (분류기용) ───────────────────────────────────────────────
-def entry_features(o, h, l, c, vol, e):
-    """진입시점(e) 기준 backward 피처. 진입 전 PRE봉 필요."""
-    entry = c[e]
-    cb = c[e - PRE + 1:e + 1]; hb = h[e - PRE + 1:e + 1]
-    lb = l[e - PRE + 1:e + 1]; vb = vol[e - PRE + 1:e + 1]
-    high20 = hb[-20:].max(); low20 = lb[-20:].min()
-    high60 = hb[-60:].max(); low60 = lb[-60:].min()
-    rng20 = high20 - low20; rng60 = high60 - low60
-    ma20 = cb[-20:].mean(); ma20_prev = cb[-40:-20].mean()
-    rets = np.diff(cb) / cb[:-1]
-    r5 = entry / cb[-6] - 1; r20 = entry / cb[-21] - 1
-    r60 = entry / cb[-61] - 1; r120 = entry / cb[-121] - 1
-    return {
-        "rsi_14": _rsi(cb, 14),
-        "range_position_20": (entry - low20) / rng20 if rng20 > 0 else np.nan,
-        "range_position_60": (entry - low60) / rng60 if rng60 > 0 else np.nan,
+# ── 진입맥락 피처 (분류기 · 진입오류 에이전트 공용 캐노니컬) ─────────────────
+def entry_features_window(wo, wh, wl, wc, wvol, buy_price=None):
+    """진입 전 윈도우 봉(마지막=진입봉)에서 진입맥락 피처 계산 — 단일 소스.
+
+    분류기·진입오류 에이전트가 공유한다. 호출자는 각자 윈도우 봉을 넘긴다
+    (분류기=인덱스 윈도우 / 에이전트=시간 윈도우 pre_df). 윈도우 선택은 호출자 몫.
+
+    buy_price=None → 진입봉 종가 기준(분류기). 주어지면 position/vs 피처는 체결가 기준
+    (에이전트). ret_*는 항상 진입봉 종가 기준. 봉 부족 피처는 None.
+    """
+    cb = np.asarray(wc, float); hb = np.asarray(wh, float)
+    lb = np.asarray(wl, float); vb = np.asarray(wvol, float)
+    n = len(cb)
+    entry_close = float(cb[-1])
+    bp = entry_close if buy_price is None else float(buy_price)
+    eo, eh, el, ev = float(wo[-1]), float(wh[-1]), float(wl[-1]), float(wvol[-1])
+
+    def pc(a, b):
+        return (a - b) / b if (b is not None and b == b and b != 0) else None
+
+    def wmax(a, k): return float(a[-k:].max()) if n >= k else None
+    def wmin(a, k): return float(a[-k:].min()) if n >= k else None
+
+    high20, low20 = wmax(hb, 20), wmin(lb, 20)
+    high60, low60 = wmax(hb, 60), wmin(lb, 60)
+    avgvol20 = float(vb[-20:].mean()) if n >= 20 else None
+    ma5 = float(cb[-5:].mean()) if n >= 5 else None
+    ma20 = float(cb[-20:].mean()) if n >= 20 else None
+    ma20_prev = float(cb[-40:-20].mean()) if n >= 40 else None
+    rsi = _rsi(cb, 14)
+    rets = np.diff(cb) / cb[:-1] if n >= 2 else np.array([])
+    r1 = pc(entry_close, float(cb[-2])) if n >= 2 else None
+    r3 = pc(entry_close, float(cb[-4])) if n >= 4 else None
+    r5 = pc(entry_close, float(cb[-6])) if n >= 6 else None
+    r20 = pc(entry_close, float(cb[-21])) if n >= 21 else None
+    r60 = pc(entry_close, float(cb[-61])) if n >= 61 else None
+    r120 = pc(entry_close, float(cb[-121])) if n >= 121 else None
+    rng20 = (high20 - low20) if (high20 is not None and low20 is not None) else None
+    rng60 = (high60 - low60) if (high60 is not None and low60 is not None) else None
+
+    def rng_pos(lo, rg): return (bp - lo) / rg if (rg is not None and rg > 0) else None
+    def ratio(num, den): return num / den if (den is not None and den > 0) else None
+
+    out = {
+        # 분류기 키
+        "rsi_14": rsi,
+        "range_position_20": rng_pos(low20, rng20),
+        "range_position_60": rng_pos(low60, rng60),
         "ret_5m": r5, "ret_20m": r20, "ret_60m": r60, "ret_120m": r120,
-        "accel": r5 - r20,
-        "entry_vs_high20": entry / high20 if high20 > 0 else np.nan,
-        "entry_vs_high60": entry / high60 if high60 > 0 else np.nan,
-        "entry_vs_ma20": entry / ma20 - 1 if ma20 > 0 else np.nan,
-        "ma_20_slope": (ma20 - ma20_prev) / ma20_prev if ma20_prev > 0 else np.nan,
-        "vol_20": rets[-20:].std(), "vol_60": rets[-60:].std(),
-        "volume_ratio_20": vol[e] / vb[-20:].mean() if vb[-20:].mean() > 0 else np.nan,
+        "accel": (r5 - r20) if (r5 is not None and r20 is not None) else None,
+        "entry_vs_high20": ratio(bp, high20),
+        "entry_vs_high60": ratio(bp, high60),
+        "entry_vs_ma20": pc(bp, ma20),
+        "ma_20_slope": pc(ma20, ma20_prev),
+        "vol_20": float(rets[-20:].std()) if n >= 21 else None,
+        "vol_60": float(rets[-60:].std()) if n >= 61 else None,
+        "volume_ratio_20": ratio(ev, avgvol20),
+        # 진입오류 에이전트 키/별칭 (같은 값, 이름만 호환)
+        "entry_position_in_bar": (bp - el) / (eh - el) if eh > el else None,
+        "entry_vs_open_pct": pc(bp, eo),
+        "bar_return_pct": pc(entry_close, eo),
+        "ret_1m": r1, "ret_3m": r3,
+        "ma_5": ma5, "ma_20": ma20,
+        "high_20m": high20, "low_20m": low20, "avg_volume_20m": avgvol20,
+        "volume_value": ev,
+        "range_position_20m": rng_pos(low20, rng20),
+        "volume_ratio_20m": ratio(ev, avgvol20),
+        "entry_vs_high20_ratio": ratio(bp, high20),
+        "entry_vs_ma20_pct": pc(bp, ma20),
     }
+    # nan → None (에이전트 상태로직의 `is None` 체크 호환)
+    return {k: (None if isinstance(v, float) and v != v else v) for k, v in out.items()}
+
+
+def entry_features(o, h, l, c, vol, e, buy_price=None):
+    """인덱스 윈도우(직전 PRE봉) 기반 진입맥락 피처 — 분류기 샘플러용 래퍼."""
+    s = max(0, e - PRE + 1)
+    return entry_features_window(o[s:e + 1], h[s:e + 1], l[s:e + 1],
+                                 c[s:e + 1], vol[s:e + 1], buy_price=buy_price)
 
 
 # ── 실 min1 샘플러 ────────────────────────────────────────────────────────
