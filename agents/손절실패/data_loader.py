@@ -12,7 +12,7 @@ import pandas as pd
 from schema import OHLCV
 
 # 기본 데이터 경로 — 프로젝트 루트 기준
-_DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "analysis" / "data" / "min1"
+_DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "analysis" / "data" / "min1"
 
 
 def _parquet_path(ticker: str, data_dir: Path) -> Path:
