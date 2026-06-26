@@ -16,6 +16,14 @@ from .holding_predictor import (
     evaluate_current_holdings,
 )
 from .holding_market_min1 import Min1HoldingMarketDataProvider
+from .entry_predictor import (
+    ClosedTradeFact,
+    PlannedEntryInput,
+    PlannedEntryRiskResult,
+    build_entry_context,
+    closed_trade_facts_from_cycles,
+    evaluate_planned_entries,
+)
 from .interaction import build_interaction_state
 from .pipeline import run_pipeline
 
@@ -25,6 +33,12 @@ __all__ = [
     "Min1HoldingMarketDataProvider",
     "HoldingMarketSnapshot",
     "HoldingRiskResult",
+    "PlannedEntryInput",
+    "ClosedTradeFact",
+    "PlannedEntryRiskResult",
+    "build_entry_context",
+    "closed_trade_facts_from_cycles",
+    "evaluate_planned_entries",
     "build_interaction_state",
     "build_position_snapshot",
     "evaluate_current_holdings",
