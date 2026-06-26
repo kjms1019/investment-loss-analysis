@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from .planned_entry_predictor import (
     ClosedTradeFact,
-    Min1PlannedEntryFeatureProvider,
     PlannedEntryInput,
     PlannedEntryRiskResult,
     build_entry_context,
@@ -19,7 +18,6 @@ from .planned_entry_predictor import (
 
 __all__ = [
     "ClosedTradeFact",
-    "Min1PlannedEntryFeatureProvider",
     "PlannedEntryInput",
     "PlannedEntryRiskResult",
     "build_entry_context",

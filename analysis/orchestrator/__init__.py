@@ -18,7 +18,6 @@ from .holding_predictor import (
 from .holding_market_min1 import Min1HoldingMarketDataProvider
 from .planned_entry_predictor import (
     ClosedTradeFact,
-    Min1PlannedEntryFeatureProvider,
     PlannedEntryInput,
     PlannedEntryRiskResult,
     build_entry_context,
@@ -32,7 +31,6 @@ __all__ = [
     "CurrentHoldingInput",
     "DemoHoldingMarketDataProvider",
     "Min1HoldingMarketDataProvider",
-    "Min1PlannedEntryFeatureProvider",
     "HoldingMarketSnapshot",
     "HoldingRiskResult",
     "ClosedTradeFact",
