@@ -139,27 +139,19 @@ cards 배열의 pattern_key는 입력 patterns 배열의 pattern_key와 1:1로 �
 def _llm_generate(report_input: TendencyReportInput, config: Config) -> TendencyReportText | None:
     if not config.use_llm or not report_input.patterns:
         return None
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        return None
-    try:
-        import anthropic  # noqa: F401
-    except ImportError:
-        return None
 
-    model = os.environ.get("TENDENCY_LLM_MODEL", config.llm_model)
+    # 공용 Claude 클라이언트(.env 로딩·키/패키지 폴백 일원화) 사용
+    from analysis.llm import generate, model_for, strip_code_fence
+    model = os.environ.get("TENDENCY_LLM_MODEL") or model_for("default")
     user_payload = json.dumps(report_input.to_dict(), ensure_ascii=False, indent=2)
 
+    text = generate(_SYSTEM_PROMPT, user_payload, kind="default", model=model,
+                    max_tokens=1500, fallback="")
+    if not text:
+        return None  # 키 없음/패키지 없음/호출 실패 → 템플릿 폴백
+
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-        resp = client.messages.create(
-            model=model,
-            max_tokens=1500,
-            system=_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_payload}],
-        )
-        text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
-        parsed = json.loads(text)
+        parsed = json.loads(strip_code_fence(text))
         cards = [
             TendencyCardText(
                 pattern_key=c["pattern_key"],

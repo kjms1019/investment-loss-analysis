@@ -8,7 +8,6 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
-from analysis.orchestrator.storage import DEFAULT_DB_PATH
 from analysis.user_profile import DEFAULT_PROFILE_DB_PATH, UserProfileStorage
 
 from .schema import RiskSignal, UserRiskProfile
@@ -23,9 +22,13 @@ class PredictorStorage:
 
     def __init__(
         self,
-        db_path: str = DEFAULT_DB_PATH,
+        db_path: Optional[str] = None,
         profile_db_path: str = DEFAULT_PROFILE_DB_PATH,
     ) -> None:
+        if db_path is None:
+            # lazy import — predictor↔orchestrator 모듈 로드 시 순환 방지
+            from analysis.orchestrator.storage import DEFAULT_DB_PATH
+            db_path = DEFAULT_DB_PATH
         self.db_path = Path(db_path)
         self.profile_db_path = profile_db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
