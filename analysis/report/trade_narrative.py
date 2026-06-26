@@ -54,3 +54,16 @@ def explain_report_item(item: Any) -> str:
         agent_id=item.agent_id, name=item.name, label=item.label,
         evidence=evidence, severity=item.severity, fallback=fb,
     )
+
+
+def enrich_summary_narratives(summary: Any) -> Any:
+    """LossReportSummary의 각 거래 narrative를 LLM 설명으로 채운다(in-place).
+
+    LLM 미사용(키 없음) 시 각 호출이 룰 narrative로 폴백되므로 그대로 안전.
+    리포트 생성 시점에만 호출(거래 수만큼 LLM 호출 — on-demand)."""
+    from analysis.llm import available
+    if not available():
+        return summary  # 키 없으면 룰 narrative 유지 (불필요한 호출 안 함)
+    for item in summary.items:
+        item.narrative = explain_report_item(item)
+    return summary

@@ -43,17 +43,27 @@ def build_item(row: Dict[str, Any]) -> LossReportItem:
     )
 
 
-def build_run_summary(run_id: str, db_path: str = query.DEFAULT_DB_PATH) -> LossReportSummary:
+def build_run_summary(run_id: str, db_path: str = query.DEFAULT_DB_PATH,
+                      *, llm: bool = False) -> LossReportSummary:
     rows = query.fetch_results_for_run(run_id, db_path=db_path)
     items = [build_item(r) for r in rows]
-    return _summarize("run", run_id, items)
+    return _maybe_llm(_summarize("run", run_id, items), llm)
 
 
-def build_user_summary(user_id: str, db_path: str = query.DEFAULT_DB_PATH) -> LossReportSummary:
+def build_user_summary(user_id: str, db_path: str = query.DEFAULT_DB_PATH,
+                       *, llm: bool = False) -> LossReportSummary:
     """user_profile_trade_labels 의 run_id 매핑을 통해 이 user_id 의 전체 run을 합산한다."""
     rows = query.fetch_results_for_user(user_id, db_path=db_path)
     items = [build_item(r) for r in rows]
-    return _summarize("user", user_id, items)
+    return _maybe_llm(_summarize("user", user_id, items), llm)
+
+
+def _maybe_llm(summary: LossReportSummary, llm: bool) -> LossReportSummary:
+    """llm=True면 거래별 narrative를 LLM 설명으로 채운다(키 없으면 룰 유지)."""
+    if llm:
+        from .trade_narrative import enrich_summary_narratives
+        enrich_summary_narratives(summary)
+    return summary
 
 
 def _summarize(scope: str, scope_id: str, items: List[LossReportItem]) -> LossReportSummary:
