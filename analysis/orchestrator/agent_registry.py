@@ -22,6 +22,7 @@ _PROJECT_ROOT     = Path(__file__).resolve().parents[2]
 _AGENTS_DIR       = _PROJECT_ROOT / "agents"
 _ENTRY_ERROR_DIR  = _AGENTS_DIR / "entry-error-agent"
 _STOP_FAIL_DIR    = _AGENTS_DIR / "손절실패"
+_MIN1_DIR         = _PROJECT_ROOT / "analysis" / "data" / "min1"   # 실 1분봉 (에이전트 피처용)
 
 # 각 vendored 에이전트가 점유하는 최상위 모듈명 (격리 대상)
 _STOP_FAIL_MODULES = [
@@ -88,13 +89,30 @@ def stop_fail_report_to_result(run_id: str, trade_id: str, report: dict) -> Agen
 def run_entry_error(run_id: str, trade_id: str, cycle_data: Dict[str, Any]) -> AgentResult:
     try:
         with vendored_agent(_ENTRY_ERROR_DIR, _ENTRY_ERROR_MODULES):
-            from src.feature_engineering import build_feature_result   # type: ignore
+            from src.feature_engineering import (                       # type: ignore
+                build_feature_result, build_feature_result_from_min1_window,
+            )
+            from src.data_loader import load_symbol_min1, extract_trade_window  # type: ignore
             from src.min1_classifier import classify_min1_market_state  # type: ignore
             from src.min1_labeler import (                              # type: ignore
                 classify_min1_entry_labels, score_min1_labels,
             )
 
+            # 실 min1 윈도우 피처 우선 — 라벨러가 구체 패턴(추격·과열 등)을 내려면 필수.
+            # min1 없거나 봉 부족하면 mock 단일행으로 폴백 → 안 깨짐.
             feature_result = build_feature_result(cycle_data)
+            code, buy_time = cycle_data.get("code"), cycle_data.get("entry_dt")
+            if code and buy_time and _MIN1_DIR.exists():
+                try:
+                    mdf = load_symbol_min1(code, data_dir=str(_MIN1_DIR))
+                    window = extract_trade_window(mdf, buy_time, pre_minutes=200, post_minutes=30)
+                    m1 = build_feature_result_from_min1_window(
+                        window, code=code, buy_price=cycle_data.get("entry_price"))
+                    if m1.get("feature_status") in ("ok", "partial"):
+                        feature_result = m1
+                except Exception:
+                    pass
+
             state_result   = classify_min1_market_state(feature_result)
             labels         = classify_min1_entry_labels(feature_result, state_result)
             risk           = score_min1_labels(labels)
