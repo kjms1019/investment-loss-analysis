@@ -27,14 +27,17 @@
 | 1. 파싱 | `common/parser.py` | CSV 체결 → 매수·매도 **사이클** 묶기 |
 | 2. 손실 선별 | `filter_loss_cycles` / `loss_screener/` | 손실 사이클만. (α 시장제거 선별은 `loss_screener`에 있음) |
 | 3. 신호 계산 | `psych_agent/` + `손절실패 엔진` | 심리 귀속(리벤지·처분효과) + 손절선(ATR) 돌파·버팀 신호 |
-| 4. **분류** | `orchestrator/router.py` | 손실거래를 **entry_error / stop_loss_failure** 로 점수화·라우팅 (전체경로 정보 사용) |
+| 4. **분류** | `analysis/classifier` + `orchestrator/router.py` | **전체경로 피처로 학습된 ML 분류기**가 손실거래마다 **entry_error / stop_loss_failure** 점수 산출 → router가 라우팅 |
 | 5. 총괄 질문 | `orchestrator/interaction.py` | 유형별 **빈도·손실금** 집계 → "자주 반복 vs 손실 큰 것, 뭘 먼저?" 사용자에게 질문 |
 | 6. 도메인 분석 | `agents/entry-error-agent` / `agents/손절실패` | 고른 유형의 거래를 심층 분석·설명 (분류와 **같은 피처** 사용 — 아래) |
 | 7. 반복/저장 | `interaction` + `user_profile/` | "다른 유형도 볼까?" (최대 2회) → 성향·반복패턴 리포트 DB 저장 |
 
-> **현재 분류(4단계)는 룰 기반 점수**(`score_cycle_candidates`)다. 이를 대체/보강할
-> **ML 분류기**는 `analysis/classifier`(런타임) + `analysis/label_validation`(설계·검증)에 있으며,
-> `router`의 `entry_min1_score` 훅으로 연결 예정.
+> **분류 = 전체경로 피처 ML 분류기**(`analysis/classifier`). `pipeline`이 손실거래마다
+> `classifier_features_for_trade()`로 min1에서 진입맥락 + 사후경로 피처를 계산해 분류기에 넣고,
+> 그 점수(`classifier_entry_score`/`classifier_stop_score`)로 router가 라우팅한다.
+> 데이터 미지지였던 `loss_early_ratio` 0.7 고정컷 룰은 **제거**(라벨축 자기참조). 룰 점수
+> (`score_cycle_candidates`)는 분류기 미가용(min1 부재) 시 폴백·보조로만.
+> ⚠️ 현재 모델은 **설계합성 placeholder** — 실거래 라벨 확보 시 재학습.
 
 ---
 
