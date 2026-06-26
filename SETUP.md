@@ -127,16 +127,17 @@ nbstripout --install
 
 ```
 mirae_asset_agent/
-├── app/                  # Next.js App Router 페이지 및 레이아웃
-├── components/           # 재사용 가능한 React 컴포넌트
-├── analysis/             # Python 데이터 분석 (JS 환경과 완전 분리)
-│   ├── notebooks/        # Jupyter 노트북 (.ipynb)
+├── agents/               # 진입오류 / 손절실패 도메인 에이전트
+├── analysis/             # 오케스트레이터, 공통 파서, 심리/프로필/예측 분석
+│   ├── common/           # 공통 스키마·파서·어댑터
+│   ├── orchestrator/     # 총괄 오케스트레이터
+│   ├── psych_agent/      # 심리 귀속 신호
 │   ├── data/             # 로컬 데이터 (git 미추적)
-│   ├── requirements.txt  # Python 의존성
 │   └── README.md         # 분석 환경 상세 가이드
+├── web/                  # Next.js 대시보드
+├── tests/                # 통합/단위 테스트
 ├── .env.example          # 환경변수 템플릿
 ├── .nvmrc                # Node.js 버전 고정 (24.15.0)
-├── package.json          # JS 의존성
 └── SETUP.md              # 이 문서
 ```
 

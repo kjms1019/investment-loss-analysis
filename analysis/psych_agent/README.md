@@ -4,7 +4,7 @@
 사후 복기해 세 가지 손실 패턴을 진단하고 개인화 교정 규칙을 제시한다.
 (매매 추천 아님 → 규제 리스크 낮음)
 
-> 📖 **전체 파이프라인(손실 선별 → 심리 귀속 → 웹)을 한 문서로 보려면 [../PIPELINE.md](../PIPELINE.md).**
+> 📖 현재 총괄 흐름은 [../orchestrator/README.md](../orchestrator/README.md)를 기준으로 본다.
 > 이 README는 심리 에이전트 모듈 자체를 다룬다.
 
 ## 두 가지 사용 모드
@@ -12,7 +12,7 @@
 1. **계좌 전체 패턴** (`agent.py` `PsychAgent`): 거래 전체에서 3패턴의 강/중/약을 본다(큰 그림).
 2. **손실거래 단위 귀속** (`focus.py` `attribute_losses`): 오케스트레이션이 선별한 손실 거래
    각각에 어떤 심리 유형이 원인인지 귀속한다. **이게 실제 라우팅에 쓰이는 핵심 경로.**
-   원칙: 손실 거래 = 설명 anchor, 전체 거래 = 패턴 계산 context (→ [../PIPELINE.md](../PIPELINE.md) §3-4).
+   원칙: 손실 거래 = 설명 anchor, 전체 거래 = 패턴 계산 context.
    psych_agent 는 선별기(loss_screener)에 의존하지 않는다 — 입력은 사이클 키 목록뿐.
 
 ## 진단하는 3가지 패턴
@@ -94,4 +94,4 @@ python -m psych_agent.run --demo            # 진단 엔진이 anthropic:... 로
 - `run.py` — 계좌 전체 분석 CLI
 - `export_web.py` — 계좌 전체 분석 → 웹 JSON
 
-> 손실선별기와 묶은 전체 파이프라인은 `../pipeline.py`, 웹 익스포트는 `../web_export.py`.
+> 현재 전체 오케스트레이션 진입점은 `../orchestrator/pipeline.py`의 `run_pipeline()`이다.

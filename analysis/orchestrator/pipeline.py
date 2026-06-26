@@ -32,6 +32,7 @@ from common.parser import build_cycles, filter_loss_cycles, parse_csv
 from common.schema import RawTrade, TradeCycle
 
 from . import agent_registry as registry
+from .interaction import build_interaction_state
 from .router import route_cycle
 from .schema import AgentResult, OrchestratorRunResult
 from .storage import DEFAULT_DB_PATH, OrchestratorStorage
@@ -236,9 +237,12 @@ def run_pipeline(
     finally:
         storage.close()
 
+    interaction_state = build_interaction_state(agent_results, loss_cycles).to_dict()
+
     return OrchestratorRunResult(
         run_id=run_id, batch_id=batch_id, status=status,
         normalized_count=len(loss_cycles),
+        interaction_state=interaction_state,
         agent_results=agent_results, notes=notes,
     )
 

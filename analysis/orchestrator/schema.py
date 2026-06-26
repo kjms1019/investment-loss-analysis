@@ -84,6 +84,7 @@ class OrchestratorRunResult:
     status: str
     normalized_count: int
     agent_results: List[AgentResult] = field(default_factory=list)
+    interaction_state: Dict[str, Any] = field(default_factory=dict)
     notes: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
