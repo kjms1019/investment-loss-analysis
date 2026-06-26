@@ -1,0 +1,47 @@
+{
+  "features": [
+    "rsi_14",
+    "range_position_20",
+    "range_position_60",
+    "ret_5m",
+    "ret_20m",
+    "ret_60m",
+    "ret_120m",
+    "accel",
+    "entry_vs_high20",
+    "entry_vs_high60",
+    "entry_vs_ma20",
+    "ma_20_slope",
+    "vol_20",
+    "vol_60",
+    "volume_ratio_20"
+  ],
+  "label_map": {
+    "0": "entry_error",
+    "1": "stop_loss_failure"
+  },
+  "n_train": 6000,
+  "cv_auc_mean": 0.9666,
+  "cv_auc_std": 0.0021,
+  "coefficients": {
+    "rsi_14": -0.0127,
+    "range_position_20": 0.0107,
+    "range_position_60": -0.4046,
+    "ret_5m": -0.0038,
+    "ret_20m": -0.0275,
+    "ret_60m": -0.4165,
+    "ret_120m": -2.9947,
+    "accel": 0.0313,
+    "entry_vs_high20": -0.0283,
+    "entry_vs_high60": 0.9667,
+    "entry_vs_ma20": -0.0232,
+    "ma_20_slope": -0.0334,
+    "vol_20": -0.0932,
+    "vol_60": 0.0488,
+    "volume_ratio_20": -1.5931
+  },
+  "trained_on": "DESIGNED synthetic validation set (placeholder until real labeled trades)",
+  "label_source": "GMM cluster on outcome signals (loss_early_ratio, trough_time_frac)",
+  "cluster_silhouette": 0.6759,
+  "source": "designed"
+}
