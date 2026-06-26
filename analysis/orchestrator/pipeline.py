@@ -18,7 +18,7 @@ from __future__ import annotations
 import sys
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 # 프로젝트 루트 / analysis 를 sys.path 에 추가 (common, psych_agent import 용)
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -31,6 +31,8 @@ from common.adapters import to_younghyun_transaction
 from common.parser import build_cycles, filter_loss_cycles, parse_csv
 from common.schema import RawTrade, TradeCycle
 
+from analysis.classifier import classify_entry
+from analysis.label_validation.label_pipeline import FEATURES as CLASSIFIER_FEATURES
 from . import agent_registry as registry
 from .interaction import build_interaction_state
 from .router import route_cycle
@@ -121,8 +123,16 @@ def run_pipeline(
     db_path: str = DEFAULT_DB_PATH,
     user_id: str = "default",
     profile_db_path: str = DEFAULT_PROFILE_DB_PATH,
+    classifier_features_by_trade_id: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> OrchestratorRunResult:
-    """CSV 한 파일을 받아 전체 파이프라인을 실행하고 결과를 반환."""
+    """CSV 한 파일을 받아 전체 파이프라인을 실행하고 결과를 반환.
+
+    classifier_features_by_trade_id:
+        Optional mapping to the final classifier's entry-context features.
+        Keys can be TradeCycle.trade_id or "{code}@{entry_dt.isoformat()}".
+        When absent, the pipeline builds a sparse fallback from available
+        execution rows.
+    """
 
     run_id   = str(uuid.uuid4())
     batch_id = str(uuid.uuid4())
@@ -176,6 +186,13 @@ def run_pipeline(
                 breached   = cycle.realized_pnl_pct < _FALLBACK_STOP_PCT
                 delay_days = 0
 
+            learned_classifier = _run_learned_classifier(
+                cycle,
+                raw_trades,
+                classifier_features_by_trade_id or {},
+            )
+            prediction = learned_classifier.get("prediction") or {}
+
             decision = route_cycle(
                 trade_id,
                 psych_dominant=psych_dom,
@@ -185,6 +202,9 @@ def run_pipeline(
                 loss_early_ratio=_loss_early_ratio(cycle, raw_trades),
                 stop_report_score=stop_score,
                 stop_signals=stop_signals,
+                classifier_entry_score=prediction.get("entry_error_score"),
+                classifier_stop_score=prediction.get("stop_loss_failure_score"),
+                classifier_result=prediction or None,
             )
 
             # 총괄 판단 결과에 따라 primary 에이전트 하나만 실행한다.
@@ -199,6 +219,7 @@ def run_pipeline(
                     result={
                         "label": "abstain_low_signal",
                         "orchestrator_decision": decision.to_dict(),
+                        "learned_classifier": learned_classifier,
                     },
                     route_reason=decision.reason,
                 )
@@ -214,6 +235,7 @@ def run_pipeline(
             registry.attach_psych_evidence(result, attribution)
             result.route_reason = decision.reason
             result.result["orchestrator_decision"] = decision.to_dict()
+            result.result["learned_classifier"] = learned_classifier
             result.result["secondary_factors"] = decision.secondary_factors
             storage.insert_agent_result(result)
             agent_results.append(result)
@@ -271,6 +293,139 @@ def _loss_early_ratio(cycle: TradeCycle, raw_trades: List[RawTrade]) -> Optional
     early_loss = (cycle.entry_price - min(early)) / cycle.entry_price
     total_loss = abs(cycle.realized_pnl_pct) / 100
     return round(early_loss / total_loss, 4) if total_loss > 0 else None
+
+
+def _run_learned_classifier(
+    cycle: TradeCycle,
+    raw_trades: List[RawTrade],
+    classifier_features_by_trade_id: Dict[str, Dict[str, Any]],
+) -> dict:
+    provided = (
+        classifier_features_by_trade_id.get(cycle.trade_id)
+        or classifier_features_by_trade_id.get(_classifier_feature_key(cycle))
+    )
+    features = dict(provided or {})
+    feature_source = "provided_by_trade_id" if features else "execution_path_fallback"
+    if not features:
+        features = _classifier_features_from_executions(cycle, raw_trades)
+
+    normalized = {name: features.get(name) for name in CLASSIFIER_FEATURES}
+    available = [
+        name for name, value in normalized.items()
+        if value is not None
+    ]
+    if not available:
+        return {
+            "status": "skipped",
+            "reason": "classifier_features_unavailable",
+            "feature_source": feature_source,
+            "features": normalized,
+        }
+
+    try:
+        prediction = classify_entry(normalized)
+    except Exception as exc:
+        return {
+            "status": "error",
+            "reason": str(exc),
+            "feature_source": feature_source,
+            "available_features": available,
+            "features": normalized,
+        }
+
+    return {
+        "status": "ok",
+        "feature_source": feature_source,
+        "feature_lookup_keys": [cycle.trade_id, _classifier_feature_key(cycle)],
+        "available_features": available,
+        "features": normalized,
+        "prediction": prediction,
+    }
+
+
+def _classifier_feature_key(cycle: TradeCycle) -> str:
+    entry = cycle.entry_dt.isoformat() if cycle.entry_dt else ""
+    return f"{cycle.code}@{entry}"
+
+
+def _classifier_features_from_executions(
+    cycle: TradeCycle,
+    raw_trades: List[RawTrade],
+) -> Dict[str, Any]:
+    """Build sparse classifier features from available execution rows.
+
+    The final classifier accepts missing features. This fallback keeps the
+    architecture wired until real 1-minute entry-context features are supplied.
+    """
+    features = {name: None for name in CLASSIFIER_FEATURES}
+    if not cycle.entry_dt or cycle.entry_price <= 0:
+        return features
+
+    rows = sorted(
+        [
+            trade for trade in raw_trades
+            if trade.code == cycle.code and trade.datetime <= cycle.entry_dt
+        ],
+        key=lambda trade: trade.datetime,
+    )
+    if not rows:
+        return features
+
+    entry_price = float(cycle.entry_price)
+    prior_prices = [float(trade.price) for trade in rows]
+    prior_qty = [float(trade.qty) for trade in rows]
+
+    for window in (20, 60):
+        prices = prior_prices[-window:]
+        if len(prices) < 2:
+            continue
+        high = max(prices)
+        low = min(prices)
+        if high > low:
+            features[f"range_position_{window}"] = (entry_price - low) / (high - low)
+        if high > 0:
+            features[f"entry_vs_high{window}"] = entry_price / high
+
+    for minutes in (5, 20, 60, 120):
+        base = _price_at_or_before(rows, cycle.entry_dt, minutes)
+        if base and base > 0:
+            features[f"ret_{minutes}m"] = entry_price / base - 1
+
+    ret_5m = features.get("ret_5m")
+    ret_20m = features.get("ret_20m")
+    if ret_5m is not None and ret_20m is not None:
+        features["accel"] = ret_5m - ret_20m
+
+    if len(prior_prices) >= 20:
+        ma20 = sum(prior_prices[-20:]) / 20
+        if ma20 > 0:
+            features["entry_vs_ma20"] = entry_price / ma20 - 1
+    if len(prior_prices) >= 40:
+        ma20 = sum(prior_prices[-20:]) / 20
+        prev_ma20 = sum(prior_prices[-40:-20]) / 20
+        if prev_ma20 > 0:
+            features["ma_20_slope"] = (ma20 - prev_ma20) / prev_ma20
+    if len(prior_qty) >= 20:
+        avg_qty = sum(prior_qty[-20:]) / 20
+        if avg_qty > 0 and rows[-1].qty:
+            features["volume_ratio_20"] = float(rows[-1].qty) / avg_qty
+
+    return features
+
+
+def _price_at_or_before(
+    rows: List[RawTrade],
+    entry_dt,
+    minutes_before: int,
+) -> Optional[float]:
+    target_ts = entry_dt.timestamp() - minutes_before * 60
+    candidates = [
+        trade for trade in rows
+        if trade.datetime.timestamp() <= target_ts
+    ]
+    if not candidates:
+        return None
+    return float(candidates[-1].price)
 
 
 def _cycle_data(cycle: TradeCycle, raw_trades: List[RawTrade]) -> dict:

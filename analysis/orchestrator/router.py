@@ -142,6 +142,9 @@ def score_cycle_candidates(
     stop_signals: Optional[dict] = None,
     entry_min1_score: Optional[float] = None,
     entry_features: Optional[dict] = None,
+    classifier_entry_score: Optional[float] = None,
+    classifier_stop_score: Optional[float] = None,
+    classifier_result: Optional[Dict[str, Any]] = None,
     thresholds: MinuteFeatureThresholds = MinuteFeatureThresholds(),
 ) -> CandidateScores:
     """Produce candidate scores for both failure types.
@@ -164,6 +167,20 @@ def score_cycle_candidates(
         contribution = min(max(float(entry_min1_score), 0.0), 1.0) * 0.55
         entry_score += contribution
         entry_evidence.append(_ev("entry_min1_score", entry_min1_score, contribution))
+
+    if classifier_entry_score is not None:
+        contribution = min(max(float(classifier_entry_score), 0.0), 1.0) * 0.60
+        entry_score += contribution
+        entry_evidence.append(_ev("learned_classifier_entry_score", classifier_entry_score, contribution))
+
+    if classifier_stop_score is not None:
+        contribution = min(max(float(classifier_stop_score), 0.0), 1.0) * 0.60
+        stop_score += contribution
+        stop_evidence.append(_ev("learned_classifier_stop_score", classifier_stop_score, contribution))
+
+    if classifier_result:
+        entry_evidence.append(_ev("learned_classifier_result", classifier_result, 0.0))
+        stop_evidence.append(_ev("learned_classifier_result", classifier_result, 0.0))
 
     if stop_report_score is not None:
         contribution = min(max(float(stop_report_score), 0.0), 1.0) * 0.55
@@ -315,6 +332,9 @@ def route_cycle(
     stop_signals: Optional[dict] = None,
     entry_min1_score: Optional[float] = None,
     entry_features: Optional[dict] = None,
+    classifier_entry_score: Optional[float] = None,
+    classifier_stop_score: Optional[float] = None,
+    classifier_result: Optional[Dict[str, Any]] = None,
 ) -> CycleRouteDecision:
     """Backward-compatible route entry point used by the pipeline and tests."""
     scores = score_cycle_candidates(
@@ -328,6 +348,9 @@ def route_cycle(
         stop_signals=stop_signals,
         entry_min1_score=entry_min1_score,
         entry_features=entry_features,
+        classifier_entry_score=classifier_entry_score,
+        classifier_stop_score=classifier_stop_score,
+        classifier_result=classifier_result,
     )
     return decide_primary_route(scores)
 

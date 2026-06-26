@@ -116,7 +116,12 @@ class EntryStopClassifier:
 @lru_cache(maxsize=1)
 def load_default() -> EntryStopClassifier:
     """기본 모델 1회 로드 후 캐시 (서비스 반복 호출용)."""
-    return EntryStopClassifier.load(DEFAULT_MODEL)
+    clf = EntryStopClassifier.load(DEFAULT_MODEL)
+    try:
+        clf.predict({feature: 0.0 for feature in clf.features})
+    except Exception:
+        clf = _fit_runtime_fallback()
+    return clf
 
 
 def classify_entry(features: Dict) -> Dict:
@@ -127,3 +132,32 @@ def classify_entry(features: Dict) -> Dict:
 def entry_min1_score(features: Dict) -> float:
     """router.score_cycle_candidates(entry_min1_score=...) 슬롯에 넣을 값."""
     return load_default().predict(features)["entry_error_score"]
+
+
+def _fit_runtime_fallback() -> EntryStopClassifier:
+    """Fit a small in-memory fallback when persisted sklearn artifacts mismatch.
+
+    The committed artifact is the preferred path. This fallback keeps the
+    orchestrator usable across local sklearn minor versions.
+    """
+    from analysis.label_validation.label_pipeline import (
+        FEATURES,
+        clean_features,
+        cluster_labels,
+        generate_designed,
+    )
+
+    df, diag = generate_designed(1200, 380, 1900, seed=42)
+    df = clean_features(df)
+    y, info = cluster_labels(df, seed=42)
+    return EntryStopClassifier.fit(
+        df[FEATURES],
+        y,
+        seed=42,
+        meta_extra={
+            "source": "runtime_fallback_designed",
+            "reason": "persisted_artifact_incompatible_with_local_sklearn",
+            "generated": diag,
+            "cluster_quality": info,
+        },
+    )

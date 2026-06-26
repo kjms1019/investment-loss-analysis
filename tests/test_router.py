@@ -62,3 +62,19 @@ def test_both_signals_choose_primary_and_record_secondary():
     assert d.agent_id == AGENT_STOP_LOSS_FAILURE
     assert d.route_type == "single_primary_with_secondary"
     assert d.secondary_factors == [AGENT_ENTRY_ERROR]
+
+
+def test_learned_classifier_scores_can_drive_routing():
+    d = route_cycle(
+        "t9",
+        psych_dominant=None,
+        breached=False,
+        delay_days=0,
+        loss_early_ratio=None,
+        classifier_entry_score=0.95,
+        classifier_stop_score=0.1,
+        classifier_result={"label": "entry_error", "confidence": 0.95},
+    )
+    assert d.agent_id == AGENT_ENTRY_ERROR
+    assert d.route_type == "single_primary"
+    assert d.classifier_scores.entry_error_score > d.classifier_scores.stop_loss_failure_score
