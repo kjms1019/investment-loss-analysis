@@ -45,6 +45,7 @@ from analysis.user_profile import (
     DEFAULT_PROFILE_DB_PATH,
     UserProfileStorage,
     build_profile,
+    build_patterns,
 )
 
 # 라우터 손절 근사 폴백 임계값 (영현 엔진 신호를 못 얻을 때만 사용)
@@ -249,6 +250,10 @@ def run_pipeline(
             profile_storage.upsert_profile(
                 build_profile(user_id, agent_results),
                 latest_run_id=run_id,
+            )
+            # 반복 실수 패턴 집계 (성향 리포트 '패턴 카드')
+            profile_storage.upsert_patterns(
+                user_id, run_id, build_patterns(agent_results),
             )
         finally:
             profile_storage.close()

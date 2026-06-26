@@ -68,6 +68,24 @@ class UserProfileStorage:
             )
             """
         )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_profile_patterns (
+                user_id TEXT,
+                run_id TEXT,
+                pattern_id TEXT,
+                domain TEXT,
+                name_ko TEXT,
+                count INTEGER NOT NULL,
+                avg_score REAL,
+                representative_trade TEXT,
+                trade_ids_json TEXT,
+                correction TEXT,
+                updated_at TEXT NOT NULL,
+                UNIQUE (user_id, pattern_id)
+            )
+            """
+        )
         self.conn.commit()
 
     def upsert_profile(
@@ -120,6 +138,44 @@ class UserProfileStorage:
             rows,
         )
         self.conn.commit()
+
+    def upsert_patterns(self, user_id: str, run_id: str, patterns: Iterable[dict]) -> None:
+        """사용자의 반복 패턴 집계를 최신 run 기준으로 교체 저장."""
+        self.conn.execute(
+            "DELETE FROM user_profile_patterns WHERE user_id = ?", (user_id,)
+        )
+        now = datetime.now().isoformat()
+        rows = [
+            (
+                user_id, run_id, p["pattern_id"], p["domain"], p["name_ko"],
+                p["count"], p.get("avg_score"), p.get("representative_trade"),
+                json.dumps(p.get("trade_ids", []), ensure_ascii=False),
+                p.get("correction"), now,
+            )
+            for p in patterns
+        ]
+        self.conn.executemany(
+            """
+            INSERT OR REPLACE INTO user_profile_patterns
+            (user_id, run_id, pattern_id, domain, name_ko, count, avg_score,
+             representative_trade, trade_ids_json, correction, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+        self.conn.commit()
+
+    def load_patterns(self, user_id: str = "default") -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM user_profile_patterns WHERE user_id = ? ORDER BY count DESC",
+            (user_id,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["trade_ids"] = json.loads(d.pop("trade_ids_json") or "[]")
+            out.append(d)
+        return out
 
     def load_profile(self, user_id: str = "default") -> "UserRiskProfile":
         from analysis.predictor.schema import UserRiskProfile
