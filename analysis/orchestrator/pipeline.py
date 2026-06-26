@@ -32,7 +32,10 @@ from common.parser import build_cycles, filter_loss_cycles, parse_csv
 from common.schema import RawTrade, TradeCycle
 
 from analysis.classifier import classify_entry
-from analysis.label_validation.label_pipeline import FEATURES as CLASSIFIER_FEATURES
+from analysis.label_validation.label_pipeline import (
+    CLASSIFIER_FEATURES,
+    classifier_features_for_trade,
+)
 from . import agent_registry as registry
 from .interaction import build_interaction_state
 from .router import route_cycle
@@ -305,9 +308,15 @@ def _run_learned_classifier(
         or classifier_features_by_trade_id.get(_classifier_feature_key(cycle))
     )
     features = dict(provided or {})
-    feature_source = "provided_by_trade_id" if features else "execution_path_fallback"
-    if not features:
-        features = _classifier_features_from_executions(cycle, raw_trades)
+    if features:
+        feature_source = "provided_by_trade_id"
+    else:
+        # 분석단: 실 min1에서 전체경로 피처 계산(진입맥락 + 사후경로). 데이터 없으면 None.
+        features = classifier_features_for_trade(cycle.code, cycle.entry_dt, cycle.exit_dt)
+        feature_source = "min1_full_path"
+        if not any(v is not None for v in features.values()):
+            features = _classifier_features_from_executions(cycle, raw_trades)
+            feature_source = "execution_path_fallback"
 
     normalized = {name: features.get(name) for name in CLASSIFIER_FEATURES}
     available = [

@@ -49,11 +49,12 @@ def test_no_signal_abstains_instead_of_defaulting():
     assert d.route_status == "abstained"
 
 
-def test_early_loss_routes_to_entry_error():
+def test_loss_early_ratio_alone_no_longer_routes():
+    # loss_early_ratio(라벨 정의축)는 더 이상 라우팅 신호가 아니다(0.7 고정컷 제거).
+    # 진입오류 라우팅은 전체피처 분류기가 담당한다(test_learned_classifier_* 참조).
     d = route_cycle("t7", psych_dominant=None,
                     breached=False, delay_days=0, loss_early_ratio=0.8)
-    assert d.agent_id == AGENT_ENTRY_ERROR
-    assert d.route_type == "single_primary"
+    assert d.route_status == "abstained"
 
 
 def test_both_signals_choose_primary_and_record_secondary():

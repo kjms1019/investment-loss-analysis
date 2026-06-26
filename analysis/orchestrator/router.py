@@ -34,7 +34,7 @@ class MinuteFeatureThresholds:
     volume_dry_ratio: float = 0.75
     ma20_down_slope: float = -0.002
     ret_5m_pullback: float = -0.004
-    loss_early_ratio_primary: float = 0.70
+    # (loss_early_ratio_primary 0.70 제거 — 데이터 미지지 고정컷. 분류기가 대체)
 
     # Stop-loss-failure thresholds, expressed for minute-level monitoring.
     breach_warn_minutes: int = 30
@@ -194,16 +194,13 @@ def score_cycle_candidates(
         stop_score += 0.60
         stop_evidence.append(_ev("psych_dominant", "disposition", 0.60))
 
+    # NOTE: loss_early_ratio(라벨 정의축)를 고정컷 0.7로 직접 라우팅하던 룰은 제거했다.
+    #   (1) 0.7은 데이터 미지지(보유기간 따라 경계가 미끄러짐 — label_validation step1)
+    #   (2) 라벨 정의축을 라우팅에 직접 쓰면 자기참조. 대신 전체피처 분류기
+    #       (post_breach_run·mae_ratio 등으로 손실 시점을 이미 학습)가 entry/stop 점수를 낸다.
+    #   loss_early_ratio는 evidence 로만 남긴다.
     if loss_early_ratio is not None:
-        if loss_early_ratio >= thresholds.loss_early_ratio_primary:
-            contribution = 0.60
-        elif loss_early_ratio >= 0.50:
-            contribution = 0.30
-        else:
-            contribution = 0.0
-        if contribution:
-            entry_score += contribution
-            entry_evidence.append(_ev("loss_early_ratio", loss_early_ratio, contribution))
+        entry_evidence.append(_ev("loss_early_ratio", loss_early_ratio, 0.0))
 
     if entry_features:
         entry_score += _score_entry_minute_features(entry_features, thresholds, entry_evidence)

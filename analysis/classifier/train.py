@@ -16,7 +16,7 @@ import argparse
 import sys
 
 from analysis.label_validation.label_pipeline import (
-    FEATURES, generate_designed, cluster_labels, clean_features,
+    CLASSIFIER_FEATURES, generate_designed, cluster_labels, clean_features,
 )
 from analysis.classifier.model import EntryStopClassifier, DEFAULT_MODEL
 
@@ -41,10 +41,11 @@ def main():
     df = clean_features(df)
     print(f"      유효표본 {len(df)}")
 
-    print("[2/3] 라벨 생성(결과신호 군집) + 학습...")
+    print("[2/3] 라벨 생성(결과신호 군집) + 학습 (전체경로 피처)...")
     y, info = cluster_labels(df, seed=args.seed)
-    clf = EntryStopClassifier.fit(df[FEATURES], y, seed=args.seed, meta_extra={
+    clf = EntryStopClassifier.fit(df[CLASSIFIER_FEATURES], y, seed=args.seed, meta_extra={
         "trained_on": "DESIGNED synthetic validation set (placeholder until real labeled trades)",
+        "feature_scope": "full_path (entry-context + post-entry path, label-axes excluded)",
         "label_source": "GMM cluster on outcome signals (loss_early_ratio, trough_time_frac)",
         "cluster_silhouette": round(info["silhouette"], 4),
         "source": args.source,

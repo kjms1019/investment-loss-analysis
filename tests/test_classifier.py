@@ -4,7 +4,7 @@ import pandas as pd
 
 from analysis.classifier import classify_entry, entry_min1_score, load_default
 from analysis.classifier.model import EntryStopClassifier
-from analysis.label_validation.label_pipeline import FEATURES
+from analysis.label_validation.label_pipeline import FEATURES, CLASSIFIER_FEATURES
 
 # 추격형(진입오류 쪽): 사전 급등·고점근접·추격 거래량
 CHASE = {"rsi_14": 75, "range_position_20": 0.9, "range_position_60": 0.9,
@@ -42,7 +42,8 @@ def test_missing_features_handled():
 
 def test_default_model_metadata():
     clf = load_default()
-    assert clf.meta["features"] == FEATURES
+    # 분석단 분류기 = 전체경로 피처(진입 + 사후경로)
+    assert clf.meta["features"] == CLASSIFIER_FEATURES
     assert clf.meta["label_map"] == {"0": "entry_error", "1": "stop_loss_failure"}
 
 
