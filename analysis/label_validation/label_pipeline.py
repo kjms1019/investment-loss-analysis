@@ -44,6 +44,12 @@ FEATURES = [
 LABEL_SIGNALS = ["loss_early_ratio", "trough_time_frac"]
 _RATIO_LIKE = {"loss_early_ratio", "post_breach_run"}   # 군집 전 로그/윈저 대상
 
+# 사후 경로피처 (라벨축 아님 — 분석단 분류기 전용. 진입피처에 더해 '전체경로' 구성)
+POST_ENTRY_FEATURES = ["post_breach_run", "mae_ratio", "breach_time_frac"]
+
+# 분석단 분류기 = 전체경로 피처 (진입맥락 + 사후경로, 라벨축 제외). 예측기는 FEATURES(진입)만.
+CLASSIFIER_FEATURES = FEATURES + POST_ENTRY_FEATURES
+
 
 # ── 결과신호 (라벨용) ─────────────────────────────────────────────────────
 def _rsi(close, period=14):
@@ -77,10 +83,18 @@ def outcome_signals(low, close, e, hold):
     below = np.where(path_low <= breach_level)[0]
     if len(below) == 0:
         run = 0.0
+        breach_time_frac = 1.0
     else:
         trough_after = path_low[below[0]:].min()
         run = max(0.0, (breach_level - trough_after) / entry / total_loss)
-    return {"loss_early_ratio": ler, "trough_time_frac": ttf, "post_breach_run": run}
+        breach_time_frac = below[0] / hold
+    mae_ratio = max(0.0, (entry - path_low.min()) / entry) / total_loss
+    return {
+        # 라벨 정의축
+        "loss_early_ratio": ler, "trough_time_frac": ttf,
+        # 사후 경로피처 (라벨축 아님 → 분류기 전체피처에 포함 가능)
+        "post_breach_run": run, "mae_ratio": mae_ratio, "breach_time_frac": breach_time_frac,
+    }
 
 
 # ── 진입맥락 피처 (분류기 · 진입오류 에이전트 공용 캐노니컬) ─────────────────
@@ -226,6 +240,43 @@ def sample_with_features(n_target, hold_min, hold_max, max_codes, seed):
             feat.update(s)
             rows.append(feat)
     return pd.DataFrame(rows), {"drawn": drawn, "loss": len(rows)}
+
+
+# ── 분석단 추론용: 실 거래 → 전체피처 ─────────────────────────────────────
+def classifier_features_for_trade(code, entry_dt, exit_dt):
+    """실 min1에서 한 손실거래의 분류기 전체피처(CLASSIFIER_FEATURES) 계산.
+
+    분석단 파이프라인이 거래마다 호출(전체경로 정보 사용). 진입맥락(진입 전 윈도우)
+    + 사후경로(진입~청산 보유경로) 피처. min1 데이터 없으면 None-채움 → 분류기 스킵.
+    """
+    import pandas as pd
+    base = {name: None for name in CLASSIFIER_FEATURES}
+    fp = MIN1_DIR / f"{str(code).strip().zfill(6)}.parquet"
+    if not fp.exists() or entry_dt is None:
+        return base
+    df = pd.read_parquet(fp, columns=["datetime", "open", "high", "low", "close", "volume"])
+    dt = pd.to_datetime(df["datetime"]).to_numpy()
+    e_dt = np.datetime64(pd.to_datetime(entry_dt))
+    x_dt = np.datetime64(pd.to_datetime(exit_dt)) if exit_dt is not None else e_dt
+    e_idx = np.where(dt <= e_dt)[0]
+    if len(e_idx) == 0:
+        return base
+    e = int(e_idx[-1])
+    x_idx = np.where(dt <= x_dt)[0]
+    xi = int(x_idx[-1]) if len(x_idx) else e
+    c = df["close"].to_numpy(float)
+    hold = min(max(1, xi - e), len(c) - 1 - e)
+    if hold < 1:
+        return base
+    o = df["open"].to_numpy(float); h = df["high"].to_numpy(float)
+    l = df["low"].to_numpy(float); v = df["volume"].to_numpy(float)
+    s = max(0, e - PRE + 1)
+    feats = entry_features_window(o[s:e + 1], h[s:e + 1], l[s:e + 1], c[s:e + 1], v[s:e + 1])
+    sig = outcome_signals(l, c, e, hold)
+    out = {name: feats.get(name) for name in FEATURES}
+    for name in POST_ENTRY_FEATURES:
+        out[name] = sig[name] if sig else None
+    return {name: out.get(name) for name in CLASSIFIER_FEATURES}
 
 
 # ── 군집 라벨러 (②) ──────────────────────────────────────────────────────
