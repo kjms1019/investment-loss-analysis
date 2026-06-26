@@ -163,60 +163,30 @@ def score_cycle_candidates(
     entry_evidence: List[Dict[str, Any]] = []
     stop_evidence: List[Dict[str, Any]] = []
 
-    if entry_min1_score is not None:
-        contribution = min(max(float(entry_min1_score), 0.0), 1.0) * 0.55
-        entry_score += contribution
-        entry_evidence.append(_ev("entry_min1_score", entry_min1_score, contribution))
-
+    # ── 라우팅은 '분류기 단독'으로 결정한다 (설계 의도) ──────────────────────
+    #   entry/stop 점수 = 전체피처 분류기의 두 점수. 그게 전부다.
+    #   · 심리귀속(리벤지/처분효과) → 라우팅에 가산하지 않는다. 도메인 에이전트의
+    #     '해석/설명'에 피처로 들어간다(attach_psych_evidence).
+    #   · 손절엔진(breach/delay) → 라우팅에 가산하지 않는다. 손절 에이전트의 '분석'에만.
+    #   아래 신호들은 라우팅 미반영 — 참고용 context evidence 로만 기록한다.
     if classifier_entry_score is not None:
-        contribution = min(max(float(classifier_entry_score), 0.0), 1.0) * 0.60
-        entry_score += contribution
-        entry_evidence.append(_ev("learned_classifier_entry_score", classifier_entry_score, contribution))
-
+        entry_score = min(max(float(classifier_entry_score), 0.0), 1.0)
+        entry_evidence.append(_ev("learned_classifier_entry_score", classifier_entry_score, entry_score))
     if classifier_stop_score is not None:
-        contribution = min(max(float(classifier_stop_score), 0.0), 1.0) * 0.60
-        stop_score += contribution
-        stop_evidence.append(_ev("learned_classifier_stop_score", classifier_stop_score, contribution))
-
+        stop_score = min(max(float(classifier_stop_score), 0.0), 1.0)
+        stop_evidence.append(_ev("learned_classifier_stop_score", classifier_stop_score, stop_score))
     if classifier_result:
         entry_evidence.append(_ev("learned_classifier_result", classifier_result, 0.0))
         stop_evidence.append(_ev("learned_classifier_result", classifier_result, 0.0))
 
-    if stop_report_score is not None:
-        contribution = min(max(float(stop_report_score), 0.0), 1.0) * 0.55
-        stop_score += contribution
-        stop_evidence.append(_ev("stop_report_score", stop_report_score, contribution))
-
-    if psych_dominant == "revenge":
-        entry_score += 0.60
-        entry_evidence.append(_ev("psych_dominant", "revenge", 0.60))
-    elif psych_dominant == "disposition":
-        stop_score += 0.60
-        stop_evidence.append(_ev("psych_dominant", "disposition", 0.60))
-
-    # NOTE: loss_early_ratio(라벨 정의축)를 고정컷 0.7로 직접 라우팅하던 룰은 제거했다.
-    #   (1) 0.7은 데이터 미지지(보유기간 따라 경계가 미끄러짐 — label_validation step1)
-    #   (2) 라벨 정의축을 라우팅에 직접 쓰면 자기참조. 대신 전체피처 분류기
-    #       (post_breach_run·mae_ratio 등으로 손실 시점을 이미 학습)가 entry/stop 점수를 낸다.
-    #   loss_early_ratio는 evidence 로만 남긴다.
+    # 라우팅 미반영(참고용). 심리는 에이전트 해석으로, 손절신호는 손절 에이전트 분석으로 전달됨.
+    if psych_dominant in ("revenge", "disposition"):
+        target = entry_evidence if psych_dominant == "revenge" else stop_evidence
+        target.append(_ev("psych_dominant(routing_excluded)", psych_dominant, 0.0))
     if loss_early_ratio is not None:
-        entry_evidence.append(_ev("loss_early_ratio", loss_early_ratio, 0.0))
-
-    if entry_features:
-        entry_score += _score_entry_minute_features(entry_features, thresholds, entry_evidence)
-
+        entry_evidence.append(_ev("loss_early_ratio(routing_excluded)", loss_early_ratio, 0.0))
     if breached:
-        stop_score += 0.25
-        stop_evidence.append(_ev("stop_breached", True, 0.25))
-        if delay_minutes >= thresholds.breach_severe_minutes:
-            stop_score += 0.35
-            stop_evidence.append(_ev("breach_minutes", delay_minutes, 0.35))
-        elif delay_minutes >= thresholds.breach_warn_minutes:
-            stop_score += 0.25
-            stop_evidence.append(_ev("breach_minutes", delay_minutes, 0.25))
-
-    if stop_signals:
-        stop_score += _score_stop_minute_features(stop_signals, thresholds, stop_evidence)
+        stop_evidence.append(_ev("stop_breached(routing_excluded)", True, 0.0))
 
     return CandidateScores(
         trade_id=trade_id,

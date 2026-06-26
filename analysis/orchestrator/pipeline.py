@@ -3,14 +3,14 @@
 흐름:
   CSV → RawTrade → TradeCycle (사이클 묶기)
   → 손실 사이클 필터링
-  → 심리 귀속(psych focus, 룰)        ┐  라우팅 신호 (LLM 없음 → 토큰 0)
+  → 심리 귀속(psych focus, 룰)        ┐  에이전트 해석/분석용 (라우팅 미반영, LLM 없음)
   → 손절실패 엔진 전체 실행(룰)       ┘
-  → 사이클별 라우팅
-  → 라우팅된 에이전트 결과 채택 (entry_error 만 개별 호출)
+  → 전체피처 분류기로 사이클별 라우팅 (entry/stop 두 점수 '단독'으로 결정)
+  → 라우팅된 에이전트 결과 채택 + 심리 evidence 첨부
   → AgentResult 저장 + 반환
 
-라우팅 신호로 쓰는 psych/stop_fail 계산은 LLM 없이 룰이므로 전체를 한 번씩
-돌려도 비용이 없다. 라우팅으로 '대표 문제'만 골라 최종 결과로 채택한다.
+라우팅은 분류기 단독으로 결정한다. psych/stop_fail은 LLM 없이 룰로 계산하되
+라우팅엔 가산하지 않고, 도메인 에이전트의 해석(심리)·분석(손절)에만 쓴다.
 """
 
 from __future__ import annotations
@@ -151,7 +151,7 @@ def run_pipeline(
         loss_cycles = filter_loss_cycles(cycles)
         notes.append(f"전체 {len(cycles)}사이클, 손실 {len(loss_cycles)}사이클 대상")
 
-        # 2. 라우팅 신호 계산 (룰, 토큰 0)
+        # 2. 보조 신호 계산 (심리·손절, 룰, 토큰 0) — 라우팅 미반영, 에이전트 해석/분석용
         try:
             psych_attr = _run_psych_attribution(raw_trades, loss_cycles)
         except Exception as e:
