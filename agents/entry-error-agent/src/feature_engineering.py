@@ -362,71 +362,23 @@ def build_feature_result_from_min1_window(window_result, code=None, buy_price=No
     else:
         buy_price = float(buy_price)
 
-    close = pre_df["close"].astype(float)
-    high = pre_df["high"].astype(float)
-    low = pre_df["low"].astype(float)
-    volume = pre_df["volume"].astype(float)
-
-    ma_5 = None
-    if len(close) >= 5:
-        ma_5 = float(close.tail(5).mean())
-
-    ma_20 = None
-    if len(close) >= 20:
-        ma_20 = float(close.tail(20).mean())
-
-    ma_20_slope = None
-    if len(close) >= 40:
-        prev_ma_20 = float(close.iloc[-40:-20].mean())
-        ma_20_slope = _safe_percent_change(ma_20, prev_ma_20)
-
-    rsi_14 = _compute_rsi_from_close(close, period=14)
-
-    ret_1m = None
-    ret_3m = None
-    ret_5m = None
-    ret_20m = None
-
-    if len(close) >= 2:
-        ret_1m = _safe_percent_change(entry_close, close.iloc[-2])
-    if len(close) >= 4:
-        ret_3m = _safe_percent_change(entry_close, close.iloc[-4])
-    if len(close) >= 6:
-        ret_5m = _safe_percent_change(entry_close, close.iloc[-6])
-    if len(close) >= 21:
-        ret_20m = _safe_percent_change(entry_close, close.iloc[-21])
-
-    high_20m = None
-    low_20m = None
-    avg_volume_20m = None
-    if len(pre_df) >= 20:
-        high_20m = float(high.tail(20).max())
-        low_20m = float(low.tail(20).min())
-        avg_volume_20m = float(volume.tail(20).mean())
-
-    entry_vs_open_pct = _safe_percent_change(buy_price, entry_open)
-
-    entry_position_in_bar = None
-    if entry_high > entry_low:
-        entry_position_in_bar = (buy_price - entry_low) / (entry_high - entry_low)
-
-    bar_return_pct = _safe_percent_change(entry_close, entry_open)
-
-    entry_vs_ma20_pct = None
-    if ma_20 is not None:
-        entry_vs_ma20_pct = _safe_percent_change(buy_price, ma_20)
-
-    entry_vs_high20_ratio = None
-    if high_20m is not None and high_20m != 0:
-        entry_vs_high20_ratio = buy_price / high_20m
-
-    range_position_20m = None
-    if high_20m is not None and low_20m is not None and high_20m > low_20m:
-        range_position_20m = (buy_price - low_20m) / (high_20m - low_20m)
-
-    volume_ratio_20m = None
-    if avg_volume_20m is not None and avg_volume_20m > 0:
-        volume_ratio_20m = entry_volume / avg_volume_20m
+    # 피처 계산은 분류기와 공유하는 단일 캐노니컬 함수에 위임한다.
+    # (분류기 label_pipeline.entry_features_window 와 동일 — 분류 근거 = 분석 근거 일치)
+    from analysis.label_validation.label_pipeline import entry_features_window
+    feats = entry_features_window(
+        pre_df["open"].to_numpy(float),
+        pre_df["high"].to_numpy(float),
+        pre_df["low"].to_numpy(float),
+        pre_df["close"].to_numpy(float),
+        pre_df["volume"].to_numpy(float),
+        buy_price=buy_price,
+    )
+    ma_20 = feats["ma_20"]
+    ma_20_slope = feats["ma_20_slope"]
+    rsi_14 = feats["rsi_14"]
+    ret_20m = feats["ret_20m"]
+    entry_vs_ma20_pct = feats["entry_vs_ma20_pct"]
+    range_position_20m = feats["range_position_20m"]
 
     if len(pre_df) < MIN_PRE_ENTRY_BARS_FOR_STATE:
         insufficient_reasons.append("pre_entry_history_short")
@@ -484,26 +436,26 @@ def build_feature_result_from_min1_window(window_result, code=None, buy_price=No
             "used_fallback_buy_price": used_fallback_buy_price,
         },
         "features": {
-            "entry_vs_open_pct": entry_vs_open_pct,
-            "entry_position_in_bar": entry_position_in_bar,
-            "bar_return_pct": bar_return_pct,
+            "entry_vs_open_pct": feats["entry_vs_open_pct"],
+            "entry_position_in_bar": feats["entry_position_in_bar"],
+            "bar_return_pct": feats["bar_return_pct"],
             "trade_return_pct": None,
-            "volume_value": entry_volume,
-            "ma_5": ma_5,
-            "ma_20": ma_20,
-            "ma_20_slope": ma_20_slope,
-            "rsi_14": rsi_14,
-            "ret_1m": ret_1m,
-            "ret_3m": ret_3m,
-            "ret_5m": ret_5m,
-            "ret_20m": ret_20m,
-            "high_20m": high_20m,
-            "low_20m": low_20m,
-            "avg_volume_20m": avg_volume_20m,
-            "volume_ratio_20m": volume_ratio_20m,
-            "entry_vs_ma20_pct": entry_vs_ma20_pct,
-            "entry_vs_high20_ratio": entry_vs_high20_ratio,
-            "range_position_20m": range_position_20m,
+            "volume_value": feats["volume_value"],
+            "ma_5": feats["ma_5"],
+            "ma_20": feats["ma_20"],
+            "ma_20_slope": feats["ma_20_slope"],
+            "rsi_14": feats["rsi_14"],
+            "ret_1m": feats["ret_1m"],
+            "ret_3m": feats["ret_3m"],
+            "ret_5m": feats["ret_5m"],
+            "ret_20m": feats["ret_20m"],
+            "high_20m": feats["high_20m"],
+            "low_20m": feats["low_20m"],
+            "avg_volume_20m": feats["avg_volume_20m"],
+            "volume_ratio_20m": feats["volume_ratio_20m"],
+            "entry_vs_ma20_pct": feats["entry_vs_ma20_pct"],
+            "entry_vs_high20_ratio": feats["entry_vs_high20_ratio"],
+            "range_position_20m": feats["range_position_20m"],
             "feature_scope": "real_min1_pre_entry_window",
             "look_ahead_warning": (
                 "Only rows at or before entry_timestamp were used for entry-decision features. "
