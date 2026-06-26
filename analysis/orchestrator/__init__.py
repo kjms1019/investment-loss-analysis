@@ -15,12 +15,14 @@ from .holding_predictor import (
     build_position_snapshot,
     evaluate_current_holdings,
 )
+from .holding_market_min1 import Min1HoldingMarketDataProvider
 from .interaction import build_interaction_state
 from .pipeline import run_pipeline
 
 __all__ = [
     "CurrentHoldingInput",
     "DemoHoldingMarketDataProvider",
+    "Min1HoldingMarketDataProvider",
     "HoldingMarketSnapshot",
     "HoldingRiskResult",
     "build_interaction_state",
