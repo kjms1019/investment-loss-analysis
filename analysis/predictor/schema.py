@@ -158,6 +158,7 @@ class RiskSignal:
     problem_type: ProblemType
     should_alert: bool
     reasons: list[str] = field(default_factory=list)
+    message: str = ""              # 사용자에게 보여줄 알림 문장 (LLM, should_alert 시 채움)
     model_used: Literal["rules", "random_forest"] = "rules"
     features: Dict[str, float] = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.now)

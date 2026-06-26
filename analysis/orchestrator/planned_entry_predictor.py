@@ -65,6 +65,16 @@ class PlannedEntryInput:
         )
 
 
+@dataclass(frozen=True)
+class ClosedTradeFact:
+    """Closed-trade history fact used to build planned-entry behavior features."""
+
+    entry_at: datetime
+    exit_at: datetime
+    return_pct: float
+    user_id: Optional[str] = None
+
+
 class PlannedEntryMarketFeatureProvider(Protocol):
     """Provider hook for broker/minute-bar data at planned-entry time."""
 
@@ -77,7 +87,7 @@ class PlannedEntryRiskResult:
     planned: PlannedEntryInput
     context: EntryContext
     signal: RiskSignal
-    message: str
+    message: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -97,8 +107,9 @@ class PlannedEntryRiskResult:
 
 def evaluate_planned_entries(
     planned_entries: Iterable[PlannedEntryInput | dict],
+    history: Optional[Iterable[ClosedTradeFact | TradeCycle]] = None,
     *,
-    historical_cycles: Optional[Iterable[TradeCycle]] = None,
+    historical_cycles: Optional[Iterable[ClosedTradeFact | TradeCycle]] = None,
     profile: Optional[UserRiskProfile] = None,
     market_feature_provider: Optional[PlannedEntryMarketFeatureProvider] = None,
     notification_policy: Optional[NotificationPolicy] = None,
@@ -111,7 +122,7 @@ def evaluate_planned_entries(
     if not normalized:
         return []
 
-    cycles = list(historical_cycles or [])
+    cycles = list(historical_cycles if historical_cycles is not None else (history or []))
     provider = market_feature_provider or Min1PlannedEntryFeatureProvider()
     predictor = TradeRiskPredictor(
         profile=profile or UserRiskProfile(user_id=normalized[0].user_id),
@@ -136,7 +147,7 @@ def evaluate_planned_entries(
 
 def build_entry_context(
     planned: PlannedEntryInput,
-    historical_cycles: Iterable[TradeCycle] = (),
+    historical_cycles: Iterable[ClosedTradeFact | TradeCycle] = (),
     *,
     market_feature_provider: Optional[PlannedEntryMarketFeatureProvider] = None,
     recent_limit: int = 20,
@@ -144,33 +155,33 @@ def build_entry_context(
     """Build the predictor contract from a plan row plus runtime features."""
     cycles = _closed_before(historical_cycles, planned.user_id, planned.planned_at)
     recent = cycles[-recent_limit:]
-    losses = [cycle for cycle in cycles if cycle.realized_pnl < 0 and cycle.exit_dt is not None]
+    losses = [cycle for cycle in cycles if _return_pct(cycle) < 0 and _exit_dt(cycle) is not None]
     last_loss = losses[-1] if losses else None
     same_day_count = sum(
         1
         for cycle in cycles
-        if cycle.entry_dt is not None and cycle.entry_dt.date() == planned.planned_at.date()
+        if _entry_dt(cycle) is not None and _entry_dt(cycle).date() == planned.planned_at.date()
     )
 
     if recent:
-        wins = sum(1 for cycle in recent if cycle.realized_pnl > 0)
+        wins = sum(1 for cycle in recent if _return_pct(cycle) > 0)
         recent_win_rate = wins / len(recent)
         holding_minutes = [
-            (cycle.exit_dt - cycle.entry_dt).total_seconds() / 60.0
+            (_exit_dt(cycle) - _entry_dt(cycle)).total_seconds() / 60.0
             for cycle in recent
-            if cycle.exit_dt is not None and cycle.entry_dt is not None
+            if _exit_dt(cycle) is not None and _entry_dt(cycle) is not None
         ]
         avg_holding = sum(holding_minutes) / len(holding_minutes) if holding_minutes else None
     else:
         recent_win_rate = None
         avg_holding = None
 
-    if last_loss and last_loss.exit_dt is not None:
+    if last_loss and _exit_dt(last_loss) is not None:
         minutes_since_last_loss = max(
-            (planned.planned_at - last_loss.exit_dt).total_seconds() / 60.0,
+            (planned.planned_at - _exit_dt(last_loss)).total_seconds() / 60.0,
             0.0,
         )
-        last_loss_pct = float(last_loss.realized_pnl_pct)
+        last_loss_pct = float(_return_pct(last_loss))
     else:
         minutes_since_last_loss = None
         last_loss_pct = None
@@ -246,23 +257,60 @@ class Min1PlannedEntryFeatureProvider:
         return self._cache[norm]
 
 
+def closed_trade_facts_from_cycles(cycles: Iterable[TradeCycle]) -> list[ClosedTradeFact]:
+    """Convert common.schema.TradeCycle rows into planned-entry history facts."""
+    facts: list[ClosedTradeFact] = []
+    for cycle in cycles:
+        if cycle.entry_dt is None or cycle.exit_dt is None:
+            continue
+        facts.append(
+            ClosedTradeFact(
+                entry_at=cycle.entry_dt,
+                exit_at=cycle.exit_dt,
+                return_pct=float(cycle.realized_pnl_pct or 0.0),
+                user_id=getattr(cycle, "user_id", None),
+            )
+        )
+    return facts
+
+
 def _closed_before(
-    cycles: Iterable[TradeCycle],
+    cycles: Iterable[ClosedTradeFact | TradeCycle],
     user_id: str,
     planned_at: datetime,
-) -> list[TradeCycle]:
+) -> list[ClosedTradeFact | TradeCycle]:
     # TradeCycle does not currently carry user_id. When callers pass only one
     # user's history, this preserves the existing schema while still keeping the
     # function ready for a future user_id attribute.
     filtered = [
         cycle
         for cycle in cycles
-        if getattr(cycle, "user_id", user_id) == user_id
-        and cycle.closed
-        and cycle.exit_dt is not None
-        and cycle.exit_dt <= planned_at
+        if getattr(cycle, "user_id", user_id) in (None, user_id)
+        and _is_closed(cycle)
+        and _exit_dt(cycle) is not None
+        and _exit_dt(cycle) <= planned_at
     ]
-    return sorted(filtered, key=lambda cycle: cycle.exit_dt or datetime.min)
+    return sorted(filtered, key=lambda cycle: _exit_dt(cycle) or datetime.min)
+
+
+def _entry_dt(cycle: ClosedTradeFact | TradeCycle) -> Optional[datetime]:
+    return getattr(cycle, "entry_at", None) or getattr(cycle, "entry_dt", None)
+
+
+def _exit_dt(cycle: ClosedTradeFact | TradeCycle) -> Optional[datetime]:
+    return getattr(cycle, "exit_at", None) or getattr(cycle, "exit_dt", None)
+
+
+def _return_pct(cycle: ClosedTradeFact | TradeCycle) -> float:
+    if hasattr(cycle, "return_pct"):
+        return float(getattr(cycle, "return_pct") or 0.0)
+    return float(getattr(cycle, "realized_pnl_pct", 0.0) or 0.0)
+
+
+def _is_closed(cycle: ClosedTradeFact | TradeCycle) -> bool:
+    if isinstance(cycle, ClosedTradeFact):
+        return True
+    return bool(getattr(cycle, "closed", True))
 
 
 def _load_name_to_code() -> dict[str, str]:
