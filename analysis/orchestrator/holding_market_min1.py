@@ -10,29 +10,15 @@ binsu의 holding_predictor.DemoHoldingMarketDataProvider(가짜 해시값)를 �
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 
+from analysis.common.min1_lookup import index_at as _idx_at
+from analysis.common.min1_lookup import load_min1, load_name_to_code
+
 from .holding_predictor import CurrentHoldingInput, HoldingMarketSnapshot
-
-_ROOT = Path(__file__).resolve().parents[2]
-_MIN1_DIR = _ROOT / "analysis" / "data" / "min1"
-_CODES_CSV = _ROOT / "analysis" / "data" / ".cache" / "kospi_codes.csv"
-
-
-def _load_name_to_code() -> dict:
-    if not _CODES_CSV.exists():
-        return {}
-    df = pd.read_csv(_CODES_CSV, dtype=str)
-    return dict(zip(df["name"], df["code"]))
-
-
-def _idx_at(dts: np.ndarray, when: datetime) -> int:
-    i = np.searchsorted(dts, np.datetime64(pd.to_datetime(when)), side="right") - 1
-    return int(max(0, min(i, len(dts) - 1)))
 
 
 class Min1HoldingMarketDataProvider:
@@ -42,24 +28,11 @@ class Min1HoldingMarketDataProvider:
                  name_to_code: Optional[dict] = None) -> None:
         self.stop_loss_pct = stop_loss_pct
         self.observed_at = observed_at
-        self.name_to_code = name_to_code if name_to_code is not None else _load_name_to_code()
-        self._cache: dict = {}
-
-    def _load(self, code: Optional[str]):
-        if not code:
-            return None
-        code = str(code).strip().zfill(6)
-        if code not in self._cache:
-            fp = _MIN1_DIR / f"{code}.parquet"
-            self._cache[code] = (
-                pd.read_parquet(fp, columns=["datetime", "high", "close"]).sort_values("datetime")
-                if fp.exists() else None
-            )
-        return self._cache[code]
+        self.name_to_code = name_to_code if name_to_code is not None else load_name_to_code()
 
     def __call__(self, holding: CurrentHoldingInput) -> HoldingMarketSnapshot:
         code = holding.code or self.name_to_code.get(holding.name)
-        df = self._load(code)
+        df = load_min1(code)
         if df is None:
             # min1 없음 → 시세 미상(예측기는 0 수익률로 보수적 처리)
             return HoldingMarketSnapshot(
