@@ -4,6 +4,7 @@
 외부에서 받은 분봉 parquet을 엔진 스키마(OHLCV)와 분봉 DataFrame 두 형태로 제공한다.
 증권사 CSV 거래내역 파서는 별도 파일(transaction_parser.py)로 추가 예정.
 """
+import os
 from pathlib import Path
 from datetime import date
 from typing import Optional
@@ -11,8 +12,14 @@ import pandas as pd
 
 from schema import OHLCV
 
-# 기본 데이터 경로 — 프로젝트 루트 기준
-_DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "analysis" / "data" / "min1"
+# 기본 데이터 경로 — MIRAE_DATA_ROOT 가 있으면 그쪽 min1/, 없으면 저장소 기본값.
+# (이 에이전트는 analysis 패키지에 의존하지 않으므로 env 를 직접 읽는다.)
+_ENV_DATA_ROOT = os.getenv("MIRAE_DATA_ROOT")
+_DEFAULT_DATA_DIR = (
+    Path(_ENV_DATA_ROOT).expanduser() / "min1"
+    if _ENV_DATA_ROOT
+    else Path(__file__).resolve().parent.parent.parent / "analysis" / "data" / "min1"
+)
 
 
 def _parquet_path(ticker: str, data_dir: Path) -> Path:

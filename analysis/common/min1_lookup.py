@@ -6,33 +6,12 @@ holding_market_min1.py(보유종목 실시간 시세)와 데모 백필 어댑터
 from __future__ import annotations
 
 from datetime import datetime
-import os
-from pathlib import Path
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 
-_ROOT = Path(__file__).resolve().parents[2]
-_LOCAL_DATA_ROOT = _ROOT / "analysis" / "data"
-_DRIVE_DATA_ROOT = Path(r"G:\내 드라이브\mirae\kospi_min1_1y_20260623")
-
-
-def _data_root() -> Path:
-    """Return the active market-data root."""
-    configured = os.getenv("MIRAE_DATA_ROOT", "").strip()
-    if configured:
-        return Path(configured)
-    if (_LOCAL_DATA_ROOT / ".cache" / "kospi_codes.csv").exists() or (_LOCAL_DATA_ROOT / "min1").exists():
-        return _LOCAL_DATA_ROOT
-    if (_DRIVE_DATA_ROOT / ".cache" / "kospi_codes.csv").exists() or (_DRIVE_DATA_ROOT / "min1").exists():
-        return _DRIVE_DATA_ROOT
-    return _LOCAL_DATA_ROOT
-
-
-DATA_ROOT = _data_root()
-MIN1_DIR = DATA_ROOT / "min1"
-CODES_CSV = DATA_ROOT / ".cache" / "kospi_codes.csv"
+from analysis.common.paths import CODES_CSV, MIN1_DIR
 
 _min1_cache: dict[str, Optional[pd.DataFrame]] = {}
 _min1_ohlcv_cache: dict[str, Optional[pd.DataFrame]] = {}
@@ -96,7 +75,6 @@ def entry_market_features(
     before = df[df["datetime"] <= pd.to_datetime(when)].tail(pre_minutes)
     if before.empty:
         return {}
-    # 지연 import: label_validation ↔ common 순환 import 방지
     from analysis.label_validation.label_pipeline import FEATURES, entry_features_window
 
     feats = entry_features_window(
@@ -106,7 +84,6 @@ def entry_market_features(
         before["close"].to_numpy(float),
         before["volume"].to_numpy(float),
     )
-    # 분류기 입력 키(FEATURES)만, None 제외 — 예측기 룰/모델이 바로 소비
     return {k: float(v) for k in FEATURES if (v := feats.get(k)) is not None}
 
 

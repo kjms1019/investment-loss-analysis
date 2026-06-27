@@ -22,7 +22,7 @@ import pandas as pd
 
 # ── 경로 / 상수 ──────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parents[2]
-from analysis.common.min1_lookup import MIN1_DIR
+from analysis.common.paths import MIN1_DIR
 OUT_DIR = ROOT / "analysis" / "data" / "_label_validation"   # gitignored
 
 PRE = 130           # 진입 전 참조 분(bars)

@@ -128,8 +128,6 @@ def run_pipeline(
     user_id: str = "default",
     profile_db_path: str = DEFAULT_PROFILE_DB_PATH,
     classifier_features_by_trade_id: Optional[Dict[str, Dict[str, Any]]] = None,
-    selected_agent_id: Optional[str] = None,
-    selected_basis: Optional[str] = None,
 ) -> OrchestratorRunResult:
     """CSV 한 파일을 받아 전체 파이프라인을 실행하고 결과를 반환.
 
@@ -285,12 +283,7 @@ def run_pipeline(
     finally:
         storage.close()
 
-    interaction_state = build_interaction_state(
-        agent_results,
-        loss_cycles,
-        selected_agent_id=selected_agent_id,
-        selected_basis=selected_basis,
-    ).to_dict()
+    interaction_state = build_interaction_state(agent_results, loss_cycles).to_dict()
     # 총괄 대화 문장(LLM). 키 없으면 템플릿 prompt_body 그대로 폴백.
     from .interaction_llm import llm_interaction_prompt
     interaction_state["llm_prompt_body"] = llm_interaction_prompt(

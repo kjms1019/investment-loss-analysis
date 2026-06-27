@@ -4,7 +4,6 @@ import sqlite3
 
 from analysis.label_validation.label_pipeline import CLASSIFIER_FEATURES
 from analysis.orchestrator.pipeline import run_pipeline
-from analysis.orchestrator.router import AGENT_STOP_LOSS_FAILURE
 
 
 def test_run_pipeline_stores_initial_feature_bundles_and_reuses_them(tmp_path):
@@ -21,14 +20,10 @@ def test_run_pipeline_stores_initial_feature_bundles_and_reuses_them(tmp_path):
         db_path=str(tmp_path / "orchestrator.sqlite3"),
         profile_db_path=str(tmp_path / "profiles.sqlite3"),
         classifier_features_by_trade_id={"005930@2026-01-02T09:00:00": features},
-        selected_agent_id=AGENT_STOP_LOSS_FAILURE,
-        selected_basis="amount",
     )
 
     assert result.normalized_count == 1
     assert result.agent_results
-    assert result.interaction_state["focus_agent_id"] == AGENT_STOP_LOSS_FAILURE
-    assert result.interaction_state["focus_basis"] == "amount"
     learned = result.agent_results[0].result["learned_classifier"]
     assert learned["calculation_stage"] == "initial_user_upload"
     assert learned["feature_scope"] == "historical_classifier_only"
