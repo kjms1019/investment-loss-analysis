@@ -67,6 +67,72 @@ def _domain_of(agent_id: str) -> Optional[dict]:
     return DOMAIN.get(agent_id)
 
 
+@lru_cache(maxsize=1)
+def _loss_by_trade() -> dict:
+    """trade_id → 실현 손실금(원, 절대값). normalized_trades 의 price·qty·pct 로 계산.
+
+    realized_pnl = entry_price * qty * (pct/100) 이므로 손절/진입 총손실금 집계에 쓴다.
+    """
+    import json as _json
+    import sqlite3
+    out: dict[str, float] = {}
+    try:
+        conn = sqlite3.connect("analysis/data/orchestrator.sqlite3")
+        for tid, price, qty, payload in conn.execute(
+            "select trade_id, price, qty, raw_payload_json from normalized_trades"
+        ):
+            pct = (_json.loads(payload or "{}") or {}).get("realized_pnl_pct")
+            if price and qty and pct is not None:
+                out[tid] = abs(float(price) * float(qty) * float(pct) / 100.0)
+        conn.close()
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def _interaction_dto(summ: LossReportSummary) -> dict:
+    """analysis/orchestrator/interaction.py 의 빈도·총손실금 판단을 리포트에서 재현.
+
+    각 손실거래를 도메인(진입오류/손절실패)별로 빈도 count + 손실금 합을 내고,
+    빈도 winner 와 금액 winner 가 같으면 선택 없이 자동 진행, 다르면 선택지를 준다.
+    """
+    loss = _loss_by_trade()
+    stat = {"cut": {"count": 0, "amount": 0.0}, "entry": {"count": 0, "amount": 0.0}}
+    for it in summ.items:
+        dom = _domain_of(it.agent_id)
+        if not dom:
+            continue
+        stat[dom["id"]]["count"] += 1
+        stat[dom["id"]]["amount"] += loss.get(it.trade_id, 0.0)
+
+    order = ["entry", "cut"]  # 동점 시 우선순위(진입오류 우선 — interaction.py 와 동일 인덱스 규칙)
+    freq_winner = max(order, key=lambda k: (stat[k]["count"], stat[k]["amount"]))
+    amt_winner = max(order, key=lambda k: (stat[k]["amount"], stat[k]["count"]))
+    agree = freq_winner == amt_winner
+    nm = {"cut": DOMAIN["stop_loss_failure"]["name"], "entry": DOMAIN["entry_error"]["name"]}
+
+    def opt(basis: str, label: str, dom_id: str) -> dict:
+        return {"basis": basis, "label": label, "type": dom_id, "name": nm[dom_id],
+                "count": stat[dom_id]["count"], "amount": round(stat[dom_id]["amount"])}
+
+    if agree:
+        message = f"빈도와 총손실금 모두 ‘{nm[freq_winner]}’이 가장 큽니다. 이 문제부터 함께 볼게요."
+    else:
+        message = (f"가장 자주 반복된 문제는 ‘{nm[freq_winner]}’이고, "
+                   f"손실 금액이 가장 컸던 문제는 ‘{nm[amt_winner]}’입니다. 어떤 걸 먼저 볼까요?")
+
+    return {
+        "stats": {k: {"count": v["count"], "amount": round(v["amount"])} for k, v in stat.items()},
+        "frequency_winner": freq_winner,
+        "amount_winner": amt_winner,
+        "question_required": not agree,
+        "message": message,
+        "auto_selected": freq_winner if agree else None,
+        "options": [opt("frequency", "자주 반복된 문제", freq_winner),
+                    opt("amount", "손실 금액이 컸던 문제", amt_winner)] if not agree else [],
+    }
+
+
 # ── 매퍼: report item → UI trade ─────────────────────────────────────────────
 def _trade_dto(it: LossReportItem) -> dict:
     dom = _domain_of(it.agent_id) or DOMAIN["entry_error"]
@@ -77,6 +143,7 @@ def _trade_dto(it: LossReportItem) -> dict:
         "code": it.code,
         "name": name,
         "date": (it.executed_at or "")[:10],
+        "loss": round(_loss_by_trade().get(it.trade_id, 0.0)),
         "type": dom["id"],                       # 'entry' | 'cut'
         "typeName": dom["name"],
         "sev": it.severity or "weak",
@@ -102,24 +169,18 @@ def _trade_dto(it: LossReportItem) -> dict:
 def _dashboard_dto(summ: LossReportSummary) -> dict:
     counts = {"cut": summ.count_by_agent.get("stop_loss_failure", 0),
               "entry": summ.count_by_agent.get("entry_error", 0)}
-    # 도메인별 평균 손실(=score 대용; α 정확분해는 추후) — 거래별 score 평균
-    by_dom_scores: dict[str, list] = {"cut": [], "entry": []}
-    for it in summ.items:
-        dom = _domain_of(it.agent_id)
-        if dom and it.score is not None:
-            by_dom_scores[dom["id"]].append(it.score)
-    avg = {k: (sum(v) / len(v) if v else 0.0) for k, v in by_dom_scores.items()}
+    interaction = _interaction_dto(summ)
 
     type_cards = []
     for key, agent in (("cut", "stop_loss_failure"), ("entry", "entry_error")):
         d = DOMAIN[agent]
         type_cards.append({"id": key, "name": d["name"], "def": d["def"], "count": counts[key],
+                           "amount": interaction["stats"][key]["amount"],
                            "color": d["color"], "tint": d["tint"], "psychLabel": d["psych"] + " 흡수"})
 
-    # focus 옵션: 빈도 최다 / (평균점수=심각도) 최대
-    freq_dom = "cut" if counts["cut"] >= counts["entry"] else "entry"
-    amount_dom = "cut" if avg["cut"] >= avg["entry"] else "entry"
-    dominant = DOMAIN["stop_loss_failure"] if freq_dom == "cut" else DOMAIN["entry_error"]
+    # 1순위: 빈도+금액 종합 winner (interaction 의 빈도 winner 기준)
+    win = interaction["frequency_winner"]
+    dominant = DOMAIN["stop_loss_failure" if win == "cut" else "entry_error"]
 
     return {
         "user_id": summ.scope_id,
@@ -130,16 +191,11 @@ def _dashboard_dto(summ: LossReportSummary) -> dict:
         "typeCards": type_cards,
         "dist": [
             {"id": "cut", **{k: DOMAIN["stop_loss_failure"][k] for k in ("name", "color", "psych")},
-             "count": counts["cut"]},
+             "count": counts["cut"], "amount": interaction["stats"]["cut"]["amount"]},
             {"id": "entry", **{k: DOMAIN["entry_error"][k] for k in ("name", "color", "psych")},
-             "count": counts["entry"]},
+             "count": counts["entry"], "amount": interaction["stats"]["entry"]["amount"]},
         ],
-        "focus": {
-            "byFreq": {"type": freq_dom, "name": DOMAIN["stop_loss_failure" if freq_dom == "cut" else "entry_error"]["name"],
-                       "stat": f"{counts[freq_dom]}건 반복", "reasonLabel": "가장 자주 반복"},
-            "byAmount": {"type": amount_dom, "name": DOMAIN["stop_loss_failure" if amount_dom == "cut" else "entry_error"]["name"],
-                         "stat": f"평균 위험 {avg[amount_dom]:.2f}", "reasonLabel": "심각도 최대"},
-        },
+        "interaction": interaction,
     }
 
 
