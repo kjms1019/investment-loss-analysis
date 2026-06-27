@@ -8,11 +8,26 @@ export type DomainId = "entry" | "cut";
 export interface UserItem { id: string; name: string; }
 
 export interface TypeCard {
-  id: DomainId; name: string; def: string; count: number;
+  id: DomainId; name: string; def: string; count: number; amount: number;
   color: string; tint: string; psychLabel: string;
 }
-export interface DistItem { id: DomainId; name: string; color: string; psych: string; count: number; }
-export interface FocusOption { type: DomainId; name: string; stat: string; reasonLabel: string; }
+export interface DistItem { id: DomainId; name: string; color: string; psych: string; count: number; amount: number; }
+
+// 빈도+총손실금 상호작용 (백엔드 _interaction_dto 와 1:1)
+export interface InteractionStat { count: number; amount: number; }
+export interface InteractionOption {
+  basis: "frequency" | "amount"; label: string; type: DomainId; name: string; count: number; amount: number;
+}
+export interface Interaction {
+  stats: Record<DomainId, InteractionStat>;
+  frequency_winner: DomainId;
+  amount_winner: DomainId;
+  question_required: boolean;
+  message: string;
+  auto_selected: DomainId | null;
+  options: InteractionOption[];
+}
+
 export interface Dashboard {
   user_id: string;
   total_loss_trades: number;
@@ -21,7 +36,7 @@ export interface Dashboard {
   dominant: { id: DomainId; name: string; count: number };
   typeCards: TypeCard[];
   dist: DistItem[];
-  focus: { byFreq: FocusOption; byAmount: FocusOption };
+  interaction: Interaction;
 }
 
 export interface Trade {
@@ -29,9 +44,12 @@ export interface Trade {
   type: DomainId; typeName: string; sev: "weak" | "moderate" | "strong";
   label: string; desc: string; evidence: string[];
   eScore: number | null; cScore: number | null; route: string | null; conf: number | null;
-  score: number | null;
+  score: number | null; loss: number | null;
   signals: { 확대: number | null; 지연: number | null; 물타기: number | null } | null;
 }
+
+// 분석 차트용 전체 거래(이익+손실). type=null 이면 이익·비선별 거래.
+export interface AllTrade { code: string; name: string; date: string; pnl: number; type: DomainId | null; }
 
 export interface Pattern {
   type: DomainId; typeName: string; color: string; tint: string;
@@ -55,6 +73,7 @@ export const api = {
   users: () => get<UserItem[]>(`/api/users`),
   dashboard: (u: string) => get<Dashboard>(`/api/dashboard/${encodeURIComponent(u)}`),
   trades: (u: string) => get<{ trades: Trade[]; count: number }>(`/api/trades/${encodeURIComponent(u)}`),
+  allTrades: (u: string) => get<{ trades: AllTrade[]; count: number }>(`/api/all-trades/${encodeURIComponent(u)}`),
   profile: (u: string) => get<{ patterns: Pattern[] }>(`/api/profile/${encodeURIComponent(u)}`),
   alerts: (u: string) => get<{ alerts: Alert[] }>(`/api/alerts/${encodeURIComponent(u)}`),
 };

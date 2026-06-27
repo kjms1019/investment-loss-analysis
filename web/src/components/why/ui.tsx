@@ -48,17 +48,17 @@ export function Section({ step, label }: { step: string; label: string }) {
 }
 
 // 손실 막대 차트 (위=수익, 아래=손실). trades 의 절대 손실 크기로.
-export function LossBars({ values, height = 190 }: { values: { v: number; color: string; dim?: boolean }[]; height?: number }) {
+export function LossBars({ values, height = 110 }: { values: { v: number; color: string; dim?: boolean }[]; height?: number }) {
   const max = Math.max(1, ...values.map((d) => Math.abs(d.v)));
   return (
-    <div style={{ position: "relative", display: "flex", alignItems: "stretch", gap: 2, height, width: "100%" }}>
+    <div style={{ position: "relative", display: "flex", alignItems: "stretch", justifyContent: "space-between", gap: 7, height, width: "100%" }}>
       <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 1, background: "#E5E8EB" }} />
       {values.map((d, i) => {
-        const hh = Math.min((Math.abs(d.v) / max) * 92, 92);
+        const hh = Math.min((Math.abs(d.v) / max) * 46, 46);
         const pos = d.v >= 0 ? { bottom: "50%" } : { top: "50%" };
         return (
-          <div key={i} style={{ flex: "1 1 0", position: "relative" }}>
-            <div style={{ position: "absolute", left: 0, right: 0, ...pos, height: hh, background: d.dim ? "#ECEEF0" : d.color, borderRadius: 2, transition: "all .4s ease" }} />
+          <div key={i} style={{ flex: "1 1 0", maxWidth: 22, position: "relative" }}>
+            <div style={{ position: "absolute", left: 0, right: 0, ...pos, height: hh + "%", background: d.dim ? "#ECEEF0" : d.color, borderRadius: 2, transition: "all .4s ease" }} />
           </div>
         );
       })}
