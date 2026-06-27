@@ -8,11 +8,26 @@ export type DomainId = "entry" | "cut";
 export interface UserItem { id: string; name: string; }
 
 export interface TypeCard {
-  id: DomainId; name: string; def: string; count: number;
+  id: DomainId; name: string; def: string; count: number; amount: number;
   color: string; tint: string; psychLabel: string;
 }
-export interface DistItem { id: DomainId; name: string; color: string; psych: string; count: number; }
-export interface FocusOption { type: DomainId; name: string; stat: string; reasonLabel: string; }
+export interface DistItem { id: DomainId; name: string; color: string; psych: string; count: number; amount: number; }
+
+// 빈도+총손실금 상호작용 (백엔드 _interaction_dto 와 1:1)
+export interface InteractionStat { count: number; amount: number; }
+export interface InteractionOption {
+  basis: "frequency" | "amount"; label: string; type: DomainId; name: string; count: number; amount: number;
+}
+export interface Interaction {
+  stats: Record<DomainId, InteractionStat>;
+  frequency_winner: DomainId;
+  amount_winner: DomainId;
+  question_required: boolean;
+  message: string;
+  auto_selected: DomainId | null;
+  options: InteractionOption[];
+}
+
 export interface Dashboard {
   user_id: string;
   total_loss_trades: number;
@@ -21,7 +36,7 @@ export interface Dashboard {
   dominant: { id: DomainId; name: string; count: number };
   typeCards: TypeCard[];
   dist: DistItem[];
-  focus: { byFreq: FocusOption; byAmount: FocusOption };
+  interaction: Interaction;
 }
 
 export interface Trade {
@@ -29,7 +44,7 @@ export interface Trade {
   type: DomainId; typeName: string; sev: "weak" | "moderate" | "strong";
   label: string; desc: string; evidence: string[];
   eScore: number | null; cScore: number | null; route: string | null; conf: number | null;
-  score: number | null;
+  score: number | null; loss: number | null;
   signals: { 확대: number | null; 지연: number | null; 물타기: number | null } | null;
 }
 

@@ -30,7 +30,6 @@ export default function Home() {
 
   const [filterType, setFilterType] = useState<DomainId | "all">("all");
   const [filterSev, setFilterSev] = useState<string>("all");
-  const [focusType, setFocusType] = useState<DomainId | null>(null);
   const [consentAgreed, setConsentAgreed] = useState(false);
   const [progressStep, setProgressStep] = useState(0);
   const [analyzeDone, setAnalyzeDone] = useState(false);
@@ -67,13 +66,15 @@ export default function Home() {
   // 분석 진행 애니메이션
   useEffect(() => {
     if (screen !== "analyze") return;
-    setProgressStep(0); setAnalyzeDone(false); setFocusType(null);
-    const ts = [1, 2, 3].map((n) => setTimeout(() => setProgressStep(n), 850 * n));
-    ts.push(setTimeout(() => { setProgressStep(4); setAnalyzeDone(true); }, 850 * 4));
+    setProgressStep(0); setAnalyzeDone(false);
+    const STEP_MS = 1500; // 사람이 단계 문구를 읽을 시간 확보
+    const ts = [1, 2, 3].map((n) => setTimeout(() => setProgressStep(n), STEP_MS * n));
+    ts.push(setTimeout(() => { setProgressStep(4); setAnalyzeDone(true); }, STEP_MS * 4));
     return () => ts.forEach(clearTimeout);
   }, [screen]);
 
   const showNav = !(screen === "login" || screen === "consent");
+  const curUserName = users.find((u) => u.id === user)?.name || "";
 
   return (
     <div style={{ minHeight: "100vh", background: "#fff", color: "#191F28" }}>
@@ -91,11 +92,12 @@ export default function Home() {
                   <NavBtn key={n.id} active={screen === n.id} num={n.num} label={n.label} onClick={() => go(n.id as Screen)} />
                 )
               )}
-              {/* 데모 사용자 선택 */}
-              <select value={user} onChange={(e) => setUser(e.target.value)}
-                style={{ marginLeft: 8, background: "#F2F4F6", border: "1px solid transparent", borderRadius: 9, padding: "7px 10px", fontSize: 13.5, color: "#191F28", cursor: "pointer" }}>
-                {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
+              {/* 사용자 선택은 ① 업로드 단계에서만 — 현재 대상만 표시 */}
+              {curUserName && (
+                <span style={{ marginLeft: 8, display: "inline-flex", alignItems: "center", gap: 6, background: "#F2F4F6", borderRadius: 9, padding: "7px 11px", fontSize: 13, color: "#4E5968" }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#F5500A" }} />{curUserName}
+                </span>
+              )}
             </nav>
           </div>
         </header>
@@ -108,8 +110,8 @@ export default function Home() {
 
         {screen === "login" && <Login onLogin={() => go("consent")} onDemo={() => { if (users[0]) setUser(users[0].id); go("consent"); }} />}
         {screen === "consent" && <Consent agreed={consentAgreed} toggle={() => setConsentAgreed((v) => !v)} onBack={() => go("login")} onStart={() => go("upload")} />}
-        {screen === "upload" && <Upload onStart={() => go("analyze")} />}
-        {screen === "analyze" && <Analyze step={progressStep} done={analyzeDone} focus={dash?.focus} focusType={focusType} setFocusType={setFocusType} onGo={() => go("dashboard")} />}
+        {screen === "upload" && <Upload users={users} user={user} setUser={setUser} onStart={() => go("analyze")} />}
+        {screen === "analyze" && <Analyze step={progressStep} done={analyzeDone} trades={trades} onGo={() => go("dashboard")} />}
         {screen === "dashboard" && <DashboardView dash={dash} trades={trades} onCard={(t) => { setFilterType(t); setFilterSev("all"); go("trades"); }} />}
         {screen === "trades" && <TradesView trades={trades} filterType={filterType} setFilterType={setFilterType} filterSev={filterSev} setFilterSev={setFilterSev} selTrade={selTrade} setSelTrade={setSelTrade} />}
         {screen === "profile" && <ProfileView patterns={patterns} />}
@@ -184,13 +186,30 @@ function Consent({ agreed, toggle, onBack, onStart }: { agreed: boolean; toggle:
 }
 
 // ── ① UPLOAD ─────────────────────────────────────────────────────────────────
-function Upload({ onStart }: { onStart: () => void }) {
+function Upload({ users, user, setUser, onStart }: { users: UserItem[]; user: string; setUser: (u: string) => void; onStart: () => void }) {
+  const curName = users.find((u) => u.id === user)?.name || "";
   return (
     <div style={{ maxWidth: 620, margin: "8px auto 0" }}>
       <Section step="1" label="복기 루프 · 1단계 업로드" />
       <h1 style={{ fontSize: "clamp(25px,4.4vw,33px)", fontWeight: 700, lineHeight: 1.32, color: "#0B2E59", margin: "14px 0 12px" }}>수익률이 아니라,<br />당신만의 <span style={{ color: "#F5500A" }}>반복 실수</span>를 찾아드려요.</h1>
       <p style={{ color: "#8B95A1", fontSize: 16, lineHeight: 1.65, margin: "0 0 26px" }}>1년치 거래내역을 올리면, 시장 탓 손실은 걷어내고 <b style={{ color: "#191F28", fontWeight: 600 }}>‘당신 탓’ 손실만</b> 골라 그 원인을 짚어드려요.</p>
-      <label style={lbl}>증권사</label>
+
+      <label style={lbl}>분석 대상 <span style={{ color: "#B0B8C1", fontWeight: 400 }}>· 예시 데이터셋 {users.length}명 중 선택</span></label>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))", gap: 8, marginBottom: 4 }}>
+        {users.length === 0 && <div style={{ fontSize: 13.5, color: "#B0B8C1", padding: "10px 2px" }}>사용자 목록을 불러오는 중…</div>}
+        {users.map((u) => {
+          const sel = u.id === user;
+          return (
+            <button key={u.id} onClick={() => setUser(u.id)} style={{ cursor: "pointer", textAlign: "left", borderRadius: 11, padding: "11px 13px", fontSize: 14, fontWeight: sel ? 700 : 500, background: sel ? "rgba(245,80,10,.10)" : "#F2F4F6", color: sel ? "#F5500A" : "#4E5968", border: "1.5px solid " + (sel ? "#F5500A" : "transparent") }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: sel ? "#F5500A" : "#C4CDD5" }} />{u.name}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <label style={{ ...lbl, marginTop: 18 }}>증권사</label>
       <select style={{ ...inp, cursor: "pointer" }}>{["미래에셋증권", "키움증권", "삼성증권", "NH투자증권", "한국투자증권"].map((b) => <option key={b}>{b}</option>)}</select>
       <label style={{ ...lbl, marginTop: 18 }}>거래내역 파일 (CSV)</label>
       <div style={{ border: "1.5px dashed #D1D6DB", borderRadius: 14, padding: "30px 20px", textAlign: "center", background: "#F8F9FA" }}>
@@ -198,8 +217,8 @@ function Upload({ onStart }: { onStart: () => void }) {
         <div style={{ fontSize: 15.5, color: "#191F28", fontWeight: 500 }}>여기로 CSV를 끌어다 놓거나 클릭해 업로드</div>
         <div style={{ fontSize: 13.5, color: "#8B95A1", marginTop: 6 }}>미래에셋·키움·삼성·NH 등 거래내역 내보내기 파일 지원</div>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "14px 0 22px", fontSize: 13.5, color: "#8B95A1" }}>지금은 예시 거래 데이터로 체험하는 중이에요.</div>
-      <button onClick={onStart} style={primaryBtn}>내 거래 복기 시작하기</button>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "14px 0 22px", fontSize: 13.5, color: "#8B95A1" }}>지금은 예시 거래 데이터로 체험하는 중이에요. {curName && <b style={{ color: "#191F28", fontWeight: 600 }}>· 분석 대상: {curName}</b>}</div>
+      <button onClick={() => user && onStart()} disabled={!user} style={{ ...primaryBtn, background: user ? "#F5500A" : "#E5E8EB", color: user ? "#fff" : "#B0B8C1", cursor: user ? "pointer" : "default" }}>{user ? "내 거래 복기 시작하기" : "분석 대상을 선택해 주세요"}</button>
     </div>
   );
 }
@@ -211,15 +230,42 @@ const PIPELINE = [
   { label: "2-way 라우팅 (진입오류·손절실패)", desc: "각 손실을 두 도메인으로 나누고, 심리 신호를 붙이는 중…" },
   { label: "거래별 설명 생성", desc: "거래마다 왜 잃었는지 한 단락씩 정리하는 중…" },
 ];
-function Analyze({ step, done, focus, focusType, setFocusType, onGo }: {
-  step: number; done: boolean; focus?: Dashboard["focus"]; focusType: DomainId | null; setFocusType: (t: DomainId) => void; onGo: () => void;
+function Analyze({ step, done, trades, onGo }: {
+  step: number; done: boolean; trades: Trade[]; onGo: () => void;
 }) {
+  // 선택은 도메인이 아니라 '카드(축)' 단위 — 두 카드가 같은 도메인일 수 있어서.
+  const [pick, setPick] = useState<"freq" | "amount" | null>(null);
+  useEffect(() => { if (!done) setPick(null); }, [done]);
+
+  // 전체 거래 차트 — 단계가 진행될수록 '색인'이 점진적으로 들어간다.
+  //  step≤1(파싱): 전체 거래 무색  → step2(손실 선별): 손실만 진하게  → step≥3(라우팅): 도메인 색.
+  const stage = step <= 1 ? "all" : step === 2 ? "loss" : "routed";
+  const chartBars = trades.map((t) => {
+    const v = -(t.loss ?? t.score ?? 1);
+    if (stage === "all") return { v, color: "#C4CDD5", dim: true };
+    if (stage === "loss") return { v, color: "#9FB1CC", dim: false };
+    return { v, color: DOMAIN[t.type].color, dim: false };
+  });
+  const stageNote = stage === "all" ? "전체 거래를 불러왔어요" : stage === "loss" ? "‘당신 탓’ 손실만 골라내는 중…" : "진입오류·손절실패로 분류하는 중…";
+  const chart = chartBars.length > 0 ? (
+    <div style={{ background: "#F8F9FA", border: "1px solid #F2F4F6", borderRadius: 16, padding: "18px 18px 16px", marginBottom: 22 }}>
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+        <div style={{ fontSize: 14.5, fontWeight: 600 }}>최근 거래 {chartBars.length}건<span style={{ color: "#8B95A1", fontWeight: 400, fontSize: 13, marginLeft: 8 }}>막대 1개 = 거래 1건 · {stageNote}</span></div>
+        <div style={{ display: "flex", gap: 12, marginLeft: "auto", fontSize: 12, color: "#8B95A1" }}>
+          <Legend color="#ECEEF0" label="전체(이익)" /><Legend color={DOMAIN.entry.color} label="진입오류" /><Legend color={DOMAIN.cut.color} label="손절실패" />
+        </div>
+      </div>
+      <LossBars values={chartBars} height={150} />
+    </div>
+  ) : null;
+
   if (!done) {
     return (
       <div style={{ maxWidth: 780, margin: "8px auto 0" }}>
         <Section step="2" label="복기 루프 · 2단계 분석 진행" />
         <h2 style={{ fontSize: "clamp(22px,3.6vw,28px)", fontWeight: 700, color: "#0B2E59", margin: "14px 0 10px" }}>당신의 거래를 천천히 읽고 있어요</h2>
-        <p style={{ color: "#8B95A1", fontSize: 16, margin: "0 0 28px" }}>시장 영향을 제거하고 <b style={{ color: "#191F28" }}>‘진짜 당신 탓 손실’</b>만 골라내는 중이에요.</p>
+        <p style={{ color: "#8B95A1", fontSize: 16, margin: "0 0 22px" }}>시장 영향을 제거하고 <b style={{ color: "#191F28" }}>‘진짜 당신 탓 손실’</b>만 골라내는 중이에요.</p>
+        {chart}
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {PIPELINE.map((p, i) => {
             const st = i < step ? "done" : i === step ? "active" : "pending";
@@ -241,30 +287,66 @@ function Analyze({ step, done, focus, focusType, setFocusType, onGo }: {
       </div>
     );
   }
-  const opts = focus ? [{ ...focus.byFreq }, { ...focus.byAmount }] : [];
+  // 완료 화면 = 2카드. 빈도+총손실금을 손실 거래에서 직접 집계(백엔드 의존 X).
+  const w = statsFromTrades(trades);
+  const opts = w
+    ? ([
+        { axis: "freq" as const, head: "가장 자주 반복된 문제", primary: "빈도", type: w.freq },
+        { axis: "amount" as const, head: "손실 금액이 가장 컸던 문제", primary: "총손실금", type: w.amount },
+      ])
+    : [];
+  const selType = w ? (pick === "freq" ? w.freq : pick === "amount" ? w.amount : null) : null;
+
   return (
     <div style={{ maxWidth: 780, margin: "8px auto 0" }}>
       <Section step="2" label="복기 루프 · 분석 완료" />
       <h2 style={{ fontSize: "clamp(22px,3.6vw,28px)", fontWeight: 700, color: "#0B2E59", margin: "14px 0 12px" }}>분석이 완료됐어요</h2>
-      <p style={{ color: "#4E5968", fontSize: 16, lineHeight: 1.8, margin: "0 0 24px" }}>가장 자주 반복된 문제와 한 번에 잃은 금액이 컸던 문제를 골라뒀어요. 어느 쪽부터 바로잡을지 골라주세요.</p>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 13 }}>
-        {opts.map((opt, i) => {
-          const m = DOMAIN[opt.type]; const sel = focusType === opt.type;
+      <p style={{ color: "#4E5968", fontSize: 16, lineHeight: 1.8, margin: "0 0 22px" }}>가장 <b style={{ color: "#191F28" }}>자주 반복된</b> 문제와 한 번에 <b style={{ color: "#191F28" }}>잃은 금액이 컸던</b> 문제예요. 어느 쪽부터 바로잡을지 <b style={{ color: "#191F28" }}>하나만</b> 골라주세요.</p>
+
+      {!w && <Loading />}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 13 }}>
+        {opts.map((o) => {
+          const m = DOMAIN[o.type]; const st = w!.stats[o.type]; const sel = pick === o.axis;
           return (
-            <button key={i} onClick={() => setFocusType(opt.type)} style={{ textAlign: "left", cursor: "pointer", background: sel ? m.tint : "#fff", border: "1.5px solid " + (sel ? m.color : "#E5E8EB"), borderTop: "3px solid " + m.color, borderRadius: 14, padding: 18 }}>
+            <button key={o.axis} onClick={() => setPick(o.axis)} style={{ textAlign: "left", cursor: "pointer", background: sel ? m.tint : "#fff", borderTop: "3px solid " + m.color, borderRight: "1.5px solid " + (sel ? m.color : "#E5E8EB"), borderBottom: "1.5px solid " + (sel ? m.color : "#E5E8EB"), borderLeft: "1.5px solid " + (sel ? m.color : "#E5E8EB"), borderRadius: 14, padding: 18 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ width: 38, height: 38, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center", background: m.tint }}><DomainIcon type={opt.type} size={20} /></div>
+                <span style={{ fontSize: 11.5, fontWeight: 600, color: m.color, background: m.tint, borderRadius: 6, padding: "4px 9px" }}>{o.head}</span>
                 {sel && <div style={{ width: 24, height: 24, borderRadius: "50%", background: m.color, display: "flex", alignItems: "center", justifyContent: "center" }}><svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg></div>}
               </div>
-              <div style={{ fontSize: 12, fontWeight: 600, marginTop: 14, color: m.color }}>{opt.reasonLabel}</div>
-              <div style={{ fontSize: 17, fontWeight: 700, marginTop: 5 }}>{opt.name}</div>
-              <div style={{ fontSize: 13.5, color: "#8B95A1", marginTop: 4 }}>{opt.stat}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 13 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: m.tint }}><DomainIcon type={o.type} size={19} /></div>
+                <div style={{ fontSize: 17, fontWeight: 700 }}>{m.name}</div>
+              </div>
+              <div style={{ display: "flex", gap: 16, marginTop: 14 }}>
+                <div>
+                  <div style={{ fontSize: 12, color: o.primary === "빈도" ? m.color : "#8B95A1", marginBottom: 3, fontWeight: o.primary === "빈도" ? 600 : 400 }}>빈도</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "#191F28" }}>{st.count}<span style={{ fontSize: 12.5, color: "#8B95A1", fontWeight: 500, marginLeft: 2 }}>건</span></div>
+                </div>
+                <div style={{ width: 1, background: "#E5E8EB" }} />
+                <div>
+                  <div style={{ fontSize: 12, color: o.primary === "총손실금" ? m.color : "#8B95A1", marginBottom: 3, fontWeight: o.primary === "총손실금" ? 600 : 400 }}>총 손실금</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: m.color }}>{won(st.amount)}</div>
+                </div>
+              </div>
             </button>
           );
         })}
       </div>
-      {focusType && <button onClick={onGo} style={{ ...primaryBtn, marginTop: 22 }}>‘{DOMAIN[focusType].name}’ 진단 결과 보기 →</button>}
+
+      <button onClick={() => selType && onGo()} disabled={!selType}
+        style={{ ...primaryBtn, marginTop: 22, background: selType ? "#F5500A" : "#E5E8EB", color: selType ? "#fff" : "#B0B8C1", cursor: selType ? "pointer" : "default" }}>
+        {selType ? `‘${DOMAIN[selType].name}’ 진단 결과 보기 →` : "둘 중 하나를 선택해 주세요"}
+      </button>
     </div>
+  );
+}
+
+function Legend({ color, label }: { color: string; label: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+      <span style={{ width: 9, height: 9, borderRadius: 2, background: color }} />{label}
+    </span>
   );
 }
 
@@ -361,7 +443,7 @@ function TradesView({ trades, filterType, setFilterType, filterSev, setFilterSev
           const m = DOMAIN[t.type]; const sel = selTrade === i;
           const eW = Math.round((t.eScore ?? 0) * 100), cW = Math.round((t.cScore ?? 0) * 100);
           return (
-            <div key={t.trade_id} onClick={() => setSelTrade(i)} style={{ cursor: "pointer", background: "#fff", border: "1px solid " + (sel ? m.color : "#E5E8EB"), borderLeft: "3px solid " + m.color, borderRadius: 14, padding: "17px 18px", boxShadow: sel ? "0 0 0 2px " + m.tint : "none" }}>
+            <div key={t.trade_id} onClick={() => setSelTrade(i)} style={{ cursor: "pointer", background: "#fff", borderTop: "1px solid " + (sel ? m.color : "#E5E8EB"), borderRight: "1px solid " + (sel ? m.color : "#E5E8EB"), borderBottom: "1px solid " + (sel ? m.color : "#E5E8EB"), borderLeft: "3px solid " + m.color, borderRadius: 14, padding: "17px 18px", boxShadow: sel ? "0 0 0 2px " + m.tint : "none" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px 5px 8px", borderRadius: 8, background: m.tint }}>
                   <DomainIcon type={t.type} size={15} /><span style={{ fontSize: 13.5, fontWeight: 600, color: m.color }}>{t.typeName}</span>
@@ -505,6 +587,35 @@ function Stat({ label, value, unit }: { label: string; value: string; unit: stri
   );
 }
 function Loading() { return <div style={{ color: "#8B95A1", fontSize: 15, padding: "40px 0", textAlign: "center" }}>불러오는 중…</div>; }
+
+// 완료 화면 2카드용: 손실 거래에서 도메인별 빈도+총손실금을 직접 집계하고 두 축의 winner 를 뽑는다.
+// 동점 시 entry 우선(백엔드 _interaction_dto 의 order 와 동일).
+type Winners = { freq: DomainId; amount: DomainId; stats: Record<DomainId, { count: number; amount: number }> };
+function statsFromTrades(trades: Trade[]): Winners | null {
+  if (!trades.length) return null;
+  const stats: Record<DomainId, { count: number; amount: number }> = {
+    entry: { count: 0, amount: 0 }, cut: { count: 0, amount: 0 },
+  };
+  for (const t of trades) {
+    const s = stats[t.type];
+    if (!s) continue;
+    s.count += 1;
+    s.amount += Math.abs(t.loss ?? 0);
+  }
+  const order: DomainId[] = ["entry", "cut"];
+  const freq = order.reduce((a, b) => (stats[b].count > stats[a].count || (stats[b].count === stats[a].count && stats[b].amount > stats[a].amount)) ? b : a);
+  const amount = order.reduce((a, b) => (stats[b].amount > stats[a].amount || (stats[b].amount === stats[a].amount && stats[b].count > stats[a].count)) ? b : a);
+  return { freq, amount, stats };
+}
+
+// 원화 축약: 1.2억원 / 1,234만원 / 5,600원
+function won(n?: number | null): string {
+  if (n == null) return "—";
+  const a = Math.abs(n);
+  if (a >= 1e8) return (n / 1e8).toFixed(a >= 1e9 ? 0 : 1).replace(/\.0$/, "") + "억원";
+  if (a >= 1e4) return Math.round(n / 1e4).toLocaleString() + "만원";
+  return Math.round(n).toLocaleString() + "원";
+}
 
 const lbl: CSSProperties = { display: "block", fontSize: 14, color: "#8B95A1", margin: "0 0 7px", fontWeight: 500 };
 const inp: CSSProperties = { width: "100%", background: "#F2F4F6", border: "1px solid transparent", borderRadius: 12, padding: "15px 16px", fontSize: 16, color: "#191F28" };
