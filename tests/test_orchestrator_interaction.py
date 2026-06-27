@@ -82,3 +82,25 @@ def test_interaction_followup_prompt_for_remaining_agent():
 
     assert data["remaining_agent_ids"] == [AGENT_STOP_LOSS_FAILURE]
     assert data["followup_prompt_body"] == "손절실패 분석도 이어서 확인해볼까요?\n[예] [아니오]"
+
+
+def test_interaction_user_selection_sets_focus_and_queue():
+    state = build_interaction_state(
+        [
+            _result("t1", AGENT_ENTRY_ERROR),
+            _result("t2", AGENT_ENTRY_ERROR),
+            _result("t3", AGENT_STOP_LOSS_FAILURE),
+        ],
+        [_cycle("t1", -10000), _cycle("t2", -10000), _cycle("t3", -50000)],
+        selected_agent_id=AGENT_STOP_LOSS_FAILURE,
+        selected_basis="amount",
+    )
+
+    data = state.to_dict()
+
+    assert data["question_required"] is False
+    assert data["focus_agent_id"] == AGENT_STOP_LOSS_FAILURE
+    assert data["focus_basis"] == "amount"
+    assert data["focus_trade_ids"] == ["t3"]
+    assert data["analysis_queue"][0] == AGENT_STOP_LOSS_FAILURE
+    assert data["auto_selected_basis"] == "amount"

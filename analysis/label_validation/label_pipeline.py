@@ -1,4 +1,4 @@
-"""진입오류/손절실패 분류기 — 공유 코어.
+﻿"""진입오류/손절실패 분류기 — 공유 코어.
 
 이 모듈은 단계 스크립트(step1~3b)가 함께 쓰는 빌딩블록을 모은다:
   - 결과신호(라벨용)  : loss_early_ratio, trough_time_frac, post_breach_run
@@ -22,7 +22,7 @@ import pandas as pd
 
 # ── 경로 / 상수 ──────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parents[2]
-MIN1_DIR = ROOT / "analysis" / "data" / "min1"
+from analysis.common.min1_lookup import MIN1_DIR
 OUT_DIR = ROOT / "analysis" / "data" / "_label_validation"   # gitignored
 
 PRE = 130           # 진입 전 참조 분(bars)

@@ -1,4 +1,4 @@
-"""총괄 오케스트레이션 파이프라인.
+﻿"""총괄 오케스트레이션 파이프라인.
 
 흐름:
   CSV → RawTrade → TradeCycle (사이클 묶기)
@@ -39,7 +39,7 @@ from analysis.label_validation.label_pipeline import (
 from . import agent_registry as registry
 from .interaction import build_interaction_state
 from .router import route_cycle
-from .schema import AgentResult, OrchestratorRunResult
+from .schema import AgentResult, CommonFeatureBundle, NormalizedTrade, OrchestratorRunResult
 from .storage import DEFAULT_DB_PATH, OrchestratorStorage
 from analysis.user_profile import (
     DEFAULT_PROFILE_DB_PATH,
@@ -128,6 +128,8 @@ def run_pipeline(
     user_id: str = "default",
     profile_db_path: str = DEFAULT_PROFILE_DB_PATH,
     classifier_features_by_trade_id: Optional[Dict[str, Dict[str, Any]]] = None,
+    selected_agent_id: Optional[str] = None,
+    selected_basis: Optional[str] = None,
 ) -> OrchestratorRunResult:
     """CSV 한 파일을 받아 전체 파이프라인을 실행하고 결과를 반환.
 
@@ -152,7 +154,21 @@ def run_pipeline(
         loss_cycles = filter_loss_cycles(cycles)
         notes.append(f"전체 {len(cycles)}사이클, 손실 {len(loss_cycles)}사이클 대상")
 
-        # 2. 보조 신호 계산 (심리·손절, 룰, 토큰 0) — 라우팅 미반영, 에이전트 해석/분석용
+        # 2. 총괄 feature preparation: 손실 사이클별 필요한 피처를 최초 1회 계산한다.
+        feature_bundles = _prepare_feature_bundles(
+            loss_cycles,
+            raw_trades,
+            classifier_features_by_trade_id or {},
+        )
+        feature_bundles_by_trade_id = {
+            bundle.trade_id: bundle for bundle in feature_bundles
+        }
+        notes.append(
+            f"초기 피처 번들 {len(feature_bundles)}건 계산 "
+            f"(ok={sum(1 for b in feature_bundles if b.feature_status == 'ok')})"
+        )
+
+        # 3. 보조 신호 계산 (심리·손절, 룰, 토큰 0) — 라우팅 미반영, 에이전트 해석/분석용
         try:
             psych_attr = _run_psych_attribution(raw_trades, loss_cycles)
         except Exception as e:
@@ -163,14 +179,16 @@ def run_pipeline(
         if not stop_reports:
             notes.append("손절실패 신호 없음 (분봉 데이터 부재) → 폴백 임계값 사용")
 
-        # 3. 저장 헤더
+        # 4. 저장 헤더
         storage.create_batch(
             batch_id=batch_id, source_name="user_csv",
             raw_file_path=trade_csv_path, row_count=len(raw_trades),
         )
         storage.create_run(run_id=run_id, batch_id=batch_id)
+        storage.insert_normalized_trades(_normalized_loss_cycles(loss_cycles, batch_id))
+        storage.insert_feature_bundles(run_id, feature_bundles)
 
-        # 4. 사이클별 라우팅 → 결과 채택
+        # 5. 사이클별 라우팅 → 결과 채택
         for cycle in loss_cycles:
             trade_id = cycle.trade_id
 
@@ -193,7 +211,7 @@ def run_pipeline(
             learned_classifier = _run_learned_classifier(
                 cycle,
                 raw_trades,
-                classifier_features_by_trade_id or {},
+                feature_bundles_by_trade_id,
             )
             prediction = learned_classifier.get("prediction") or {}
 
@@ -267,12 +285,16 @@ def run_pipeline(
     finally:
         storage.close()
 
-    interaction_state = build_interaction_state(agent_results, loss_cycles).to_dict()
+    interaction_state = build_interaction_state(
+        agent_results,
+        loss_cycles,
+        selected_agent_id=selected_agent_id,
+        selected_basis=selected_basis,
+    ).to_dict()
     # 총괄 대화 문장(LLM). 키 없으면 템플릿 prompt_body 그대로 폴백.
     from .interaction_llm import llm_interaction_prompt
     interaction_state["llm_prompt_body"] = llm_interaction_prompt(
         interaction_state, fallback=interaction_state.get("prompt_body", ""))
-
     return OrchestratorRunResult(
         run_id=run_id, batch_id=batch_id, status=status,
         normalized_count=len(loss_cycles),
@@ -284,6 +306,89 @@ def run_pipeline(
 # ──────────────────────────────────────────────
 # 보조 계산
 # ──────────────────────────────────────────────
+
+def _prepare_feature_bundles(
+    loss_cycles: List[TradeCycle],
+    raw_trades: List[RawTrade],
+    provided_features: Dict[str, Dict[str, Any]],
+) -> List[CommonFeatureBundle]:
+    """총괄 에이전트의 초기 feature preparation 단계.
+
+    실시간 진입 예측을 제외한 배치 분석에서는 여기서 손실 사이클별 분류 필요 피처만
+    한 번 계산하고, 이후 분류/라우팅/리포트는 저장된 bundle을 공유한다.
+    """
+    bundles: List[CommonFeatureBundle] = []
+    for cycle in loss_cycles:
+        provided = (
+            provided_features.get(cycle.trade_id)
+            or provided_features.get(_classifier_feature_key(cycle))
+        )
+        notes = [
+            "orchestrator_selected_scope:historical_loss_classification",
+            "realtime_entry_prediction_features_excluded",
+        ]
+        if provided:
+            raw_features = dict(provided)
+            feature_source = "provided_by_trade_id"
+        else:
+            raw_features = classifier_features_for_trade(cycle.code, cycle.entry_dt, cycle.exit_dt)
+            feature_source = "min1_full_path"
+            if not any(v is not None for v in raw_features.values()):
+                raw_features = _classifier_features_from_executions(cycle, raw_trades)
+                feature_source = "execution_path_fallback"
+
+        features = {name: raw_features.get(name) for name in CLASSIFIER_FEATURES}
+        available = [name for name, value in features.items() if value is not None]
+        missing = [name for name, value in features.items() if value is None]
+        status = "ok" if available else "skipped"
+        if status == "skipped":
+            notes.append("classifier_features_unavailable")
+
+        bundles.append(
+            CommonFeatureBundle(
+                trade_id=cycle.trade_id,
+                feature_status=status,
+                features=features,
+                data_quality={
+                    "feature_source": feature_source,
+                    "calculation_stage": "initial_user_upload",
+                    "feature_scope": "historical_classifier_only",
+                    "lookup_keys": [cycle.trade_id, _classifier_feature_key(cycle)],
+                    "available_features": available,
+                    "missing_features": missing,
+                },
+                notes=notes,
+            )
+        )
+    return bundles
+
+
+# 리포트/후속 조회가 agent_results.trade_id와 같은 키로 거래 맥락을 찾을 수 있게 저장한다.
+def _normalized_loss_cycles(loss_cycles: List[TradeCycle], batch_id: str) -> List[NormalizedTrade]:
+    rows: List[NormalizedTrade] = []
+    for idx, cycle in enumerate(loss_cycles):
+        rows.append(
+            NormalizedTrade(
+                trade_id=cycle.trade_id,
+                batch_id=batch_id,
+                source_row_index=idx,
+                executed_at=cycle.entry_dt.isoformat() if cycle.entry_dt else "",
+                code=cycle.code,
+                name=cycle.name,
+                side="CYCLE",
+                qty=float(cycle.qty),
+                price=float(cycle.entry_price),
+                raw_payload={
+                    "entry_dt": cycle.entry_dt.isoformat() if cycle.entry_dt else None,
+                    "exit_dt": cycle.exit_dt.isoformat() if cycle.exit_dt else None,
+                    "entry_price": cycle.entry_price,
+                    "exit_price": cycle.exit_price,
+                    "realized_pnl": cycle.realized_pnl,
+                    "realized_pnl_pct": cycle.realized_pnl_pct,
+                },
+            )
+        )
+    return rows
 
 def _loss_early_ratio(cycle: TradeCycle, raw_trades: List[RawTrade]) -> Optional[float]:
     """보유 초반 20% 구간에서 발생한 손실 비율 (체결 데이터 근사)."""
@@ -310,33 +415,31 @@ def _loss_early_ratio(cycle: TradeCycle, raw_trades: List[RawTrade]) -> Optional
 def _run_learned_classifier(
     cycle: TradeCycle,
     raw_trades: List[RawTrade],
-    classifier_features_by_trade_id: Dict[str, Dict[str, Any]],
+    feature_bundles_by_trade_id: Dict[str, CommonFeatureBundle],
 ) -> dict:
-    provided = (
-        classifier_features_by_trade_id.get(cycle.trade_id)
-        or classifier_features_by_trade_id.get(_classifier_feature_key(cycle))
-    )
-    features = dict(provided or {})
-    if features:
-        feature_source = "provided_by_trade_id"
-    else:
-        # 분석단: 실 min1에서 전체경로 피처 계산(진입맥락 + 사후경로). 데이터 없으면 None.
-        features = classifier_features_for_trade(cycle.code, cycle.entry_dt, cycle.exit_dt)
-        feature_source = "min1_full_path"
-        if not any(v is not None for v in features.values()):
-            features = _classifier_features_from_executions(cycle, raw_trades)
-            feature_source = "execution_path_fallback"
+    bundle = feature_bundles_by_trade_id.get(cycle.trade_id)
+    if bundle is None:
+        return {
+            "status": "skipped",
+            "reason": "feature_bundle_unavailable",
+            "feature_source": "missing_initial_bundle",
+            "features": {name: None for name in CLASSIFIER_FEATURES},
+        }
 
-    normalized = {name: features.get(name) for name in CLASSIFIER_FEATURES}
+    normalized = {name: bundle.features.get(name) for name in CLASSIFIER_FEATURES}
     available = [
         name for name, value in normalized.items()
         if value is not None
     ]
+    feature_source = str(bundle.data_quality.get("feature_source", "initial_feature_bundle"))
+    lookup_keys = bundle.data_quality.get("lookup_keys") or [cycle.trade_id, _classifier_feature_key(cycle)]
     if not available:
         return {
             "status": "skipped",
             "reason": "classifier_features_unavailable",
             "feature_source": feature_source,
+            "feature_lookup_keys": lookup_keys,
+            "feature_bundle_status": bundle.feature_status,
             "features": normalized,
         }
 
@@ -347,6 +450,8 @@ def _run_learned_classifier(
             "status": "error",
             "reason": str(exc),
             "feature_source": feature_source,
+            "feature_lookup_keys": lookup_keys,
+            "feature_bundle_status": bundle.feature_status,
             "available_features": available,
             "features": normalized,
         }
@@ -354,12 +459,14 @@ def _run_learned_classifier(
     return {
         "status": "ok",
         "feature_source": feature_source,
-        "feature_lookup_keys": [cycle.trade_id, _classifier_feature_key(cycle)],
+        "feature_lookup_keys": lookup_keys,
+        "feature_bundle_status": bundle.feature_status,
+        "feature_scope": bundle.data_quality.get("feature_scope"),
+        "calculation_stage": bundle.data_quality.get("calculation_stage"),
         "available_features": available,
         "features": normalized,
         "prediction": prediction,
     }
-
 
 def _classifier_feature_key(cycle: TradeCycle) -> str:
     entry = cycle.entry_dt.isoformat() if cycle.entry_dt else ""

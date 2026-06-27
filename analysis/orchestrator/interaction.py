@@ -1,8 +1,10 @@
-"""User interaction state for the top-level orchestrator.
+﻿"""User interaction state for the top-level orchestrator.
 
 The interaction layer runs after per-trade routing. It summarizes routed loss
 trades by problem domain, then decides whether the web UI should ask the user
-which problem perspective they want to analyze.
+which problem perspective they want to analyze. If the user already chose a
+perspective, it turns that choice into the focused analysis queue consumed by
+UI/API layers.
 """
 
 from __future__ import annotations
@@ -64,6 +66,10 @@ class InteractionState:
     round_index: int = 1
     max_rounds: int = 2
     followup_prompt_body: Optional[str] = None
+    focus_agent_id: Optional[str] = None
+    focus_basis: Optional[str] = None
+    focus_trade_ids: List[str] = field(default_factory=list)
+    analysis_queue: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -83,6 +89,10 @@ class InteractionState:
             "round_index": self.round_index,
             "max_rounds": self.max_rounds,
             "followup_prompt_body": self.followup_prompt_body,
+            "focus_agent_id": self.focus_agent_id,
+            "focus_basis": self.focus_basis,
+            "focus_trade_ids": self.focus_trade_ids,
+            "analysis_queue": self.analysis_queue,
         }
 
 
@@ -91,6 +101,8 @@ def build_interaction_state(
     loss_cycles: Iterable[TradeCycle],
     *,
     completed_agent_ids: Optional[Iterable[str]] = None,
+    selected_agent_id: Optional[str] = None,
+    selected_basis: Optional[str] = None,
     round_index: int = 1,
     max_rounds: int = 2,
 ) -> InteractionState:
@@ -99,6 +111,7 @@ def build_interaction_state(
         agent_id for agent_id in (completed_agent_ids or [])
         if agent_id in SELECTABLE_AGENT_IDS
     ]
+    selected = selected_agent_id if selected_agent_id in SELECTABLE_AGENT_IDS else None
     loss_by_trade_id = {
         cycle.trade_id: abs(float(cycle.realized_pnl or 0.0))
         for cycle in loss_cycles
@@ -125,6 +138,10 @@ def build_interaction_state(
             prompt_body="분석할 수 있는 손실 문제를 찾지 못했습니다.",
             completed_agent_ids=completed,
             remaining_agent_ids=[],
+            focus_agent_id=None,
+            focus_basis=None,
+            focus_trade_ids=[],
+            analysis_queue=[],
             round_index=round_index,
             max_rounds=max_rounds,
         )
@@ -135,6 +152,35 @@ def build_interaction_state(
         agent_id for agent_id in SELECTABLE_AGENT_IDS
         if agent_id not in completed and stats[agent_id].count > 0
     ]
+
+    focus_agent_id = selected or (frequency_winner if frequency_winner == amount_winner else None)
+    focus_basis = selected_basis or ("auto_same_winner" if focus_agent_id else None)
+    focus_trade_ids = stats[focus_agent_id].trade_ids if focus_agent_id else []
+    analysis_queue = _analysis_queue(stats, focus_agent_id, completed)
+
+    if selected:
+        prompt = (
+            "사용자가 선택한 기준에 따라 "
+            f"'{AGENT_LABELS[selected]}' 문제를 먼저 분석합니다."
+        )
+        return InteractionState(
+            category_stats=stats,
+            frequency_winner=frequency_winner,
+            amount_winner=amount_winner,
+            question_required=False,
+            prompt_body=prompt,
+            auto_selected_agent_id=selected,
+            auto_selected_basis=selected_basis or "user_selected",
+            completed_agent_ids=completed,
+            remaining_agent_ids=remaining,
+            round_index=round_index,
+            max_rounds=max_rounds,
+            followup_prompt_body=_followup_prompt(stats, completed + [selected], max_rounds),
+            focus_agent_id=selected,
+            focus_basis=selected_basis or "user_selected",
+            focus_trade_ids=focus_trade_ids,
+            analysis_queue=analysis_queue,
+        )
 
     if frequency_winner == amount_winner:
         prompt = (
@@ -155,6 +201,10 @@ def build_interaction_state(
             round_index=round_index,
             max_rounds=max_rounds,
             followup_prompt_body=_followup_prompt(stats, completed, max_rounds),
+            focus_agent_id=focus_agent_id,
+            focus_basis=focus_basis,
+            focus_trade_ids=focus_trade_ids,
+            analysis_queue=analysis_queue,
         )
 
     prompt = (
@@ -189,6 +239,10 @@ def build_interaction_state(
         round_index=round_index,
         max_rounds=max_rounds,
         followup_prompt_body=_followup_prompt(stats, completed, max_rounds),
+        focus_agent_id=focus_agent_id,
+        focus_basis=focus_basis,
+        focus_trade_ids=focus_trade_ids,
+        analysis_queue=analysis_queue,
     )
 
 
@@ -219,6 +273,22 @@ def _winner_by_amount(stats: List[CategoryStat]) -> str:
             -SELECTABLE_AGENT_IDS.index(stat.agent_id),
         ),
     ).agent_id
+
+
+def _analysis_queue(
+    stats: Dict[str, CategoryStat],
+    focus_agent_id: Optional[str],
+    completed_agent_ids: List[str],
+) -> List[str]:
+    ordered: List[str] = []
+    if focus_agent_id and stats[focus_agent_id].count > 0:
+        ordered.append(focus_agent_id)
+    for agent_id in SELECTABLE_AGENT_IDS:
+        if agent_id in ordered or agent_id in completed_agent_ids:
+            continue
+        if stats[agent_id].count > 0:
+            ordered.append(agent_id)
+    return ordered
 
 
 def _followup_prompt(

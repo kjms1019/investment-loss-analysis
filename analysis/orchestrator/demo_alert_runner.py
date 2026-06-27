@@ -1,4 +1,4 @@
-"""데모 사용자 xlsx 기반 B 루프(사전 경고) 실행기.
+﻿"""데모 사용자 xlsx 기반 B 루프(사전 경고) 실행기.
 
 흐름:
   1. 종결거래 시트 -> 사용자별 BUY/SELL 합성(min1 종가) -> run_pipeline 백필
@@ -298,11 +298,16 @@ def check_stop_loss_warnings(
     db_path: str = DEFAULT_DB_PATH,
     profile_db_path: str = DEFAULT_PROFILE_DB_PATH,
     market_data_provider=None,
+    name_to_code: Optional[dict] = None,
     notification_policy: Optional[NotificationPolicy] = None,
 ) -> list[dict]:
     """현재보유 시트 종목을 as_of 시점 시세로 평가해 손절실패 경고를 계산."""
     holdings_by_user = load_current_holdings(xlsx_path)
-    provider = market_data_provider or Min1HoldingMarketDataProvider(observed_at=as_of)
+    mapping = name_to_code if name_to_code is not None else load_name_to_code()
+    provider = market_data_provider or Min1HoldingMarketDataProvider(
+        observed_at=as_of,
+        name_to_code=mapping,
+    )
 
     storage = PredictorStorage(db_path=db_path, profile_db_path=profile_db_path)
     alerts: list[dict] = []
@@ -310,7 +315,7 @@ def check_stop_loss_warnings(
         for user_id, rows in holdings_by_user.items():
             profile = storage.load_user_profile(user_id=user_id)
             results = evaluate_current_holdings(
-                rows,
+                _rows_with_codes(rows, mapping),
                 profile=profile,
                 market_data_provider=provider,
                 notification_policy=notification_policy or NotificationPolicy(),
@@ -326,6 +331,14 @@ def check_stop_loss_warnings(
 
     return alerts
 
+def _rows_with_codes(rows: list[dict], name_to_code: dict) -> list[dict]:
+    enriched: list[dict] = []
+    for row in rows:
+        item = dict(row)
+        if not item.get("종목코드"):
+            item["종목코드"] = name_to_code.get(str(item.get("종목명")))
+        enriched.append(item)
+    return enriched
 
 def _format_stop_loss_alert(
     user_id: str,

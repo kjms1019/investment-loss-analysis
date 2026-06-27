@@ -1,4 +1,4 @@
-"""1분봉(analysis/data/min1) 공용 조회 유틸.
+﻿"""1분봉(analysis/data/min1) 공용 조회 유틸.
 
 holding_market_min1.py(보유종목 실시간 시세)와 데모 백필 어댑터가
 종목명→코드 매핑, parquet 로딩, 특정 시각 인덱스 조회를 공유한다.
@@ -6,6 +6,7 @@ holding_market_min1.py(보유종목 실시간 시세)와 데모 백필 어댑터
 from __future__ import annotations
 
 from datetime import datetime
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -13,8 +14,25 @@ import numpy as np
 import pandas as pd
 
 _ROOT = Path(__file__).resolve().parents[2]
-MIN1_DIR = _ROOT / "analysis" / "data" / "min1"
-CODES_CSV = _ROOT / "analysis" / "data" / ".cache" / "kospi_codes.csv"
+_LOCAL_DATA_ROOT = _ROOT / "analysis" / "data"
+_DRIVE_DATA_ROOT = Path(r"G:\내 드라이브\mirae\kospi_min1_1y_20260623")
+
+
+def _data_root() -> Path:
+    """Return the active market-data root."""
+    configured = os.getenv("MIRAE_DATA_ROOT", "").strip()
+    if configured:
+        return Path(configured)
+    if (_LOCAL_DATA_ROOT / ".cache" / "kospi_codes.csv").exists() or (_LOCAL_DATA_ROOT / "min1").exists():
+        return _LOCAL_DATA_ROOT
+    if (_DRIVE_DATA_ROOT / ".cache" / "kospi_codes.csv").exists() or (_DRIVE_DATA_ROOT / "min1").exists():
+        return _DRIVE_DATA_ROOT
+    return _LOCAL_DATA_ROOT
+
+
+DATA_ROOT = _data_root()
+MIN1_DIR = DATA_ROOT / "min1"
+CODES_CSV = DATA_ROOT / ".cache" / "kospi_codes.csv"
 
 _min1_cache: dict[str, Optional[pd.DataFrame]] = {}
 _min1_ohlcv_cache: dict[str, Optional[pd.DataFrame]] = {}
