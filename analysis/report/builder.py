@@ -51,9 +51,15 @@ def build_run_summary(run_id: str, db_path: str = query.DEFAULT_DB_PATH,
 
 
 def build_user_summary(user_id: str, db_path: str = query.DEFAULT_DB_PATH,
-                       *, llm: bool = False) -> LossReportSummary:
-    """user_profile_trade_labels 의 run_id 매핑을 통해 이 user_id 의 전체 run을 합산한다."""
-    rows = query.fetch_results_for_user(user_id, db_path=db_path)
+                       *, profile_db_path: str = query.DEFAULT_PROFILE_DB_PATH,
+                       llm: bool = False) -> LossReportSummary:
+    """user_profile_trade_labels 의 run_id 매핑을 통해 이 user_id 의 전체 run을 합산한다.
+
+    profile_db_path 는 user_id→run_id 매핑이 든 user_profile DB 경로. 테스트/환경
+    분리 시 임시 DB 를 가리킬 수 있게 인자로 받는다(기본=서비스 DB).
+    """
+    rows = query.fetch_results_for_user(
+        user_id, db_path=db_path, profile_db_path=profile_db_path)
     items = [build_item(r) for r in rows]
     return _maybe_llm(_summarize("user", user_id, items), llm)
 

@@ -1,4 +1,4 @@
-﻿"""Planned-entry behavior feature builder and predictor orchestration.
+"""Planned-entry behavior feature builder and predictor orchestration.
 
 The uploaded investment plan stays intentionally small: user, plan id,
 symbol/name, planned time, and planned quantity. Predictor inputs are computed

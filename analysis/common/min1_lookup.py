@@ -1,4 +1,4 @@
-﻿"""1분봉(analysis/data/min1) 공용 조회 유틸.
+"""1분봉(analysis/data/min1) 공용 조회 유틸.
 
 holding_market_min1.py(보유종목 실시간 시세)와 데모 백필 어댑터가
 종목명→코드 매핑, parquet 로딩, 특정 시각 인덱스 조회를 공유한다.
