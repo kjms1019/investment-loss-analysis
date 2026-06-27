@@ -128,8 +128,6 @@ def run_pipeline(
     user_id: str = "default",
     profile_db_path: str = DEFAULT_PROFILE_DB_PATH,
     classifier_features_by_trade_id: Optional[Dict[str, Dict[str, Any]]] = None,
-    selected_agent_id: Optional[str] = None,
-    selected_basis: Optional[str] = None,
 ) -> OrchestratorRunResult:
     """CSV 한 파일을 받아 전체 파이프라인을 실행하고 결과를 반환.
 
@@ -286,12 +284,10 @@ def run_pipeline(
     finally:
         storage.close()
 
-    interaction_state = build_interaction_state(
-        agent_results,
-        loss_cycles,
-        selected_agent_id=selected_agent_id,
-        selected_basis=selected_basis,
-    ).to_dict()
+    # 초기 분석 파이프라인은 '질문 상태'까지만 만든다. 사용자 선택/focus는
+    # 사후(post-hoc)로 interaction.py(build_interaction_state(selected_agent_id=...))
+    # 와 API 레이어가 처리한다 — 초기 분석과 상호작용 선택을 섞지 않는다.
+    interaction_state = build_interaction_state(agent_results, loss_cycles).to_dict()
     # 총괄 대화 문장(LLM). 키 없으면 템플릿 prompt_body 그대로 폴백.
     from .interaction_llm import llm_interaction_prompt
     interaction_state["llm_prompt_body"] = llm_interaction_prompt(
