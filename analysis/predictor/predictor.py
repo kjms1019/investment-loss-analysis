@@ -203,6 +203,14 @@ class TradeRiskPredictor:
             score += 0.08
             reasons.append("weak_market_mood")
 
+        # 진입맥락(min1) — 과열·추격 자리는 진입오류 위험 가산.
+        # 분석단 분류기와 동일 피처(entry_features_window)를 써서 "분류 근거 = 예측 근거" 유지.
+        ctx_score, ctx_reasons = _entry_context_risk(context.features)
+        if ctx_reasons:
+            score += ctx_score
+            problem_type = ENTRY_ERROR
+            reasons.extend(ctx_reasons)
+
         if not reasons:
             reasons.append("no_strong_entry_risk_signal")
 
@@ -351,6 +359,40 @@ def _dominant_or_unknown(profile: UserRiskProfile) -> ProblemType:
 
 def _clamp(value: float) -> float:
     return max(0.0, min(float(value), 1.0))
+
+
+def _entry_context_risk(features: Dict[str, float]) -> tuple[float, list[str]]:
+    """진입맥락(min1) 과열·추격 신호 → 진입오류 위험 가산치와 사유.
+
+    features 가 비어있으면(시세 미연결) (0, []) 을 반환해 기존 행동기반 점수를 유지한다.
+    가산 상한 0.30 — 행동기반 경계 거래를 알림 임계(0.7) 위로 올릴 수 있되 과적합 방지.
+    """
+    if not features:
+        return 0.0, []
+    rp20 = features.get("range_position_20")
+    rsi = features.get("rsi_14")
+    vs_high20 = features.get("entry_vs_high20")
+    ret120 = features.get("ret_120m")
+    volr = features.get("volume_ratio_20")
+
+    add = 0.0
+    reasons: list[str] = []
+    if rp20 is not None and rp20 >= 0.85:        # 20봉 레인지 상단 추격
+        add += 0.14
+        reasons.append("range_top_chase")
+    if rsi is not None and rsi >= 70:            # RSI 과열권 진입
+        add += 0.12
+        reasons.append("overheated_rsi")
+    if vs_high20 is not None and vs_high20 >= 0.99:  # 20봉 고가 1% 이내 추격
+        add += 0.10
+        reasons.append("near_high20_chase")
+    if ret120 is not None and ret120 >= 0.05:    # 직전 120분 +5% 급등 직후 진입
+        add += 0.08
+        reasons.append("post_surge_entry")
+    if volr is not None and volr >= 1.8 and rp20 is not None and rp20 >= 0.7:
+        add += 0.06                              # 상단 + 거래량 급증 동반 추격
+        reasons.append("volume_chase")
+    return min(add, 0.30), reasons
 
 
 def _random_forest_classifier():

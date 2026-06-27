@@ -17,6 +17,7 @@ MIN1_DIR = _ROOT / "analysis" / "data" / "min1"
 CODES_CSV = _ROOT / "analysis" / "data" / ".cache" / "kospi_codes.csv"
 
 _min1_cache: dict[str, Optional[pd.DataFrame]] = {}
+_min1_ohlcv_cache: dict[str, Optional[pd.DataFrame]] = {}
 _name_to_code_cache: Optional[dict] = None
 
 
@@ -44,6 +45,51 @@ def load_min1(code: Optional[str]) -> Optional[pd.DataFrame]:
             if fp.exists() else None
         )
     return _min1_cache[code]
+
+
+def load_min1_ohlcv(code: Optional[str]) -> Optional[pd.DataFrame]:
+    """종목코드 → 1분봉 OHLCV DataFrame(진입맥락 피처 계산용), 캐시됨. 파일 없으면 None."""
+    if not code:
+        return None
+    code = str(code).strip().zfill(6)
+    if code not in _min1_ohlcv_cache:
+        fp = MIN1_DIR / f"{code}.parquet"
+        _min1_ohlcv_cache[code] = (
+            pd.read_parquet(
+                fp, columns=["datetime", "open", "high", "low", "close", "volume"]
+            ).sort_values("datetime")
+            if fp.exists() else None
+        )
+    return _min1_ohlcv_cache[code]
+
+
+def entry_market_features(
+    code: Optional[str], when: datetime, *, pre_minutes: int = 200
+) -> dict:
+    """진입(예정) 시각 직전 pre_minutes 봉으로 진입맥락 피처를 계산.
+
+    분류기·진입오류 에이전트와 동일한 캐노니컬 함수(entry_features_window)를 써서
+    "분류 근거 = 예측 근거"를 유지한다. 데이터 없으면 빈 dict.
+    반환 키 = FEATURES(rsi_14·range_position_20·entry_vs_high20·ret_120m·volume_ratio_20 등).
+    """
+    df = load_min1_ohlcv(code)
+    if df is None or df.empty:
+        return {}
+    before = df[df["datetime"] <= pd.to_datetime(when)].tail(pre_minutes)
+    if before.empty:
+        return {}
+    # 지연 import: label_validation ↔ common 순환 import 방지
+    from analysis.label_validation.label_pipeline import FEATURES, entry_features_window
+
+    feats = entry_features_window(
+        before["open"].to_numpy(float),
+        before["high"].to_numpy(float),
+        before["low"].to_numpy(float),
+        before["close"].to_numpy(float),
+        before["volume"].to_numpy(float),
+    )
+    # 분류기 입력 키(FEATURES)만, None 제외 — 예측기 룰/모델이 바로 소비
+    return {k: float(v) for k in FEATURES if (v := feats.get(k)) is not None}
 
 
 def index_at(dts: np.ndarray, when: datetime) -> int:

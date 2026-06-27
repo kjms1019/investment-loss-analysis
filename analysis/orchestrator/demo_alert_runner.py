@@ -23,7 +23,12 @@ from typing import Callable, Optional
 from common.parser import build_cycles
 from common.schema import RawTrade, TradeCycle
 
-from analysis.common.min1_lookup import load_min1, load_name_to_code, price_at
+from analysis.common.min1_lookup import (
+    entry_market_features,
+    load_min1,
+    load_name_to_code,
+    price_at,
+)
 from analysis.predictor import (
     EntryContext,
     NotificationPolicy,
@@ -193,6 +198,8 @@ def _build_entry_context(
         minutes_since_last_loss=minutes_since_last_loss,
         last_loss_pct=last_loss.realized_pnl_pct if last_loss else None,
         same_day_trade_count=same_day_trade_count,
+        # 예정 종목의 진입맥락(과열·추격) min1 피처 — 예측기 룰이 소비(진입오류 가산)
+        features=entry_market_features(code, entered_at),
     )
 
 

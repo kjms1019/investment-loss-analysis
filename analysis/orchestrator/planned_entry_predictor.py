@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Iterable, Optional
 
+from analysis.common.min1_lookup import entry_market_features
 from analysis.common.schema import TradeCycle
 from analysis.predictor import (
     EntryContext,
@@ -166,6 +167,11 @@ def build_entry_context(
         minutes_since_last_loss = None
         last_loss_pct = None
 
+    # 예정 종목의 진입맥락(과열·추격) min1 피처 — 코드가 있을 때만(이름만이면 빈 dict)
+    market_features = (
+        entry_market_features(planned.code, planned.planned_at) if planned.code else {}
+    )
+
     return EntryContext(
         user_id=planned.user_id,
         trade_id=planned.plan_id,
@@ -177,6 +183,7 @@ def build_entry_context(
         recent_avg_holding_minutes=avg_holding,
         last_loss_pct=last_loss_pct,
         same_day_trade_count=same_day_count,
+        features=market_features,
     )
 
 
