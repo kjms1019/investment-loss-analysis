@@ -24,6 +24,7 @@ backfill_user_profiles('tests/fixtures/demo_users_all_data.final_3sheets.xlsx')"
 |---|---|---|---|
 | GET | `/api/users` | 공통 | user_profiles |
 | GET | `/api/dashboard/{user}` | ③ 진단 대시보드 | report.build_user_summary |
+| GET | `/api/interaction/{user}/select` | ③ 문제 선택 | 선택 도메인 포커스 + 다음 라운드 (사후) |
 | GET | `/api/trades/{user}` | ④ 거래별 설명 | report items (분류기 점수·손절신호·narrative) |
 | GET | `/api/profile/{user}` | ⑤ 내 성향 | user_profile patterns |
 | GET | `/api/alerts/{user}` | ⑥ 실시간 알림 | demo_alert_runner B·C (캐시) |

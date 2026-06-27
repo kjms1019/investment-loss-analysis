@@ -59,17 +59,24 @@ storage.py (SQLite 저장)
 `pipeline.py`는 사이클별 진입맥락 피처를 `classify_entry()`에 넘기고,
 반환된 `entry_error_score`와 `stop_loss_failure_score`를 `router.py`에 전달한다.
 
-현재 피처 입력 경로:
+피처는 **초기 1회**만 계산해 재사용한다(`_prepare_feature_bundles` → `feature_bundles` 테이블).
+이후 분류/라우팅/리포트는 저장된 번들을 공유하므로 단계마다 재계산하지 않는다.
 
 ```text
 1. classifier_features_by_trade_id 인자로 전달된 실제 피처 우선 사용
-2. 없으면 CSV 체결 경로에서 만들 수 있는 sparse fallback 피처 사용
-3. 누락 피처는 analysis/classifier 모델 내부 median 대치로 처리
+2. 없으면 min1 전체경로 피처 계산(classifier_features_for_trade), 데이터 없으면
+   CSV 체결 경로 sparse fallback
+3. 계산 결과를 CommonFeatureBundle 로 묶어 출처 메타와 함께 1회 저장 → 전체 단계 공유
+4. 누락 피처는 analysis/classifier 모델 내부 median 대치로 처리
 ```
 
 따라서 팀원이 실제 데이터 기반 피처 생성기를 붙이면 `run_pipeline(..., classifier_features_by_trade_id=...)`
 형태로 주입하거나, `pipeline.py`의 fallback 어댑터만 교체하면 된다. 피처 주입 키는
 `trade_id` 또는 `{code}@{entry_dt.isoformat()}` 둘 다 지원한다.
+
+> **사용자 선택/focus 는 초기 분석에 넣지 않는다.** `run_pipeline`은 '질문 상태'까지만
+> 만들고, 선택→포커스→다음 라운드는 사후로 `interaction.build_interaction_state(selected_agent_id=...)`
+> 와 API(`/api/interaction/{user}/select`)가 처리한다(관심사 분리).
 
 ## 사용법
 
@@ -94,4 +101,10 @@ datetime,code,name,side,qty,price
 analysis/data/orchestrator.sqlite3
 ```
 
-`analysis/data/` 는 `.gitignore` 대상이므로 DB 파일은 커밋되지 않음.
+주요 테이블: `normalized_trades`(손실 사이클 요약 — 리포트의 code·name·진입일 소스,
+`agent_results.trade_id` 와 조인), `feature_bundles`(초기 1회 계산 피처+출처 메타),
+`agent_results`, `orchestrator_runs`.
+
+`analysis/data/` 는 `.gitignore` 대상이므로 DB 파일은 커밋되지 않음. min1 parquet·캐시는
+저장소 밖(공유 드라이브 등)에 둘 수 있으며, 그 경우 `.env` 의 `MIRAE_DATA_ROOT` 로
+상위 폴더를 지정한다(미지정 시 `analysis/data`).

@@ -11,10 +11,17 @@
 ```python
 from analysis.classifier import classify_entry
 
-result = classify_entry(entry_features)   # entry_features: label_pipeline.FEATURES 키 dict
+# 입력 = label_pipeline.CLASSIFIER_FEATURES (진입맥락 15 + 사후경로 3) 전체경로 dict
+result = classify_entry(full_path_features)
 # → {"entry_error_score": 0.78, "stop_loss_failure_score": 0.22,
 #    "label": "entry_error", "confidence": 0.78}
 ```
+
+> **용도 한정:** 이 분류기는 **분석단(청산된 손실거래 사후 분류)** 전용이다. 학습·추론
+> 모두 전체경로 피처를 쓴다. **진입 전 예측(예정매수/현재보유)은 이 모델이 아니라
+> predictor 의 룰 스코어러**가 담당한다 — 그 시점엔 사후경로 피처가 없기 때문.
+> 진입맥락 피처(FEATURES, 15)만 넘기면 빠진 사후피처가 median 으로 조용히 대치돼
+> 엉뚱한 점수가 나오니 그렇게 쓰지 말 것.
 
 - 누락 피처는 NaN→median 대치로 처리된다(부분 피처도 호출 가능).
 - 모델은 1회 로드 후 캐시(`load_default`)되어 반복 호출이 가볍다.
@@ -38,8 +45,9 @@ scores = score_cycle_candidates(
 ## 학습 / 재학습
 
 ```bash
-python -m analysis.classifier.train            # 기본: 설계 합성 검증셋으로 학습
+python -m analysis.classifier.train            # 기본: 실 KOSPI min1 랜덤샘플(--source random)
 python -m analysis.classifier.train --n 8000
+python -m analysis.classifier.train --source designed   # 참고·검증용 설계 합성셋
 ```
 
 학습 흐름(순환 방지): 결과신호 **군집**으로 라벨 생성 → **전체경로 피처**로 학습.

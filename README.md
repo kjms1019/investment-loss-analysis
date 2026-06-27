@@ -92,9 +92,9 @@ from analysis.orchestrator import run_pipeline
 print(run_pipeline('my_trades.csv', broker='kiwoom').to_dict())
 "
 
-# 분류기 학습/호출
+# 분류기 학습/호출 (분석단 — 입력은 CLASSIFIER_FEATURES 전체경로 dict)
 python -m analysis.classifier.train
-python -c "from analysis.classifier import classify_entry; print(classify_entry({'rsi_14':72,'volume_ratio_20':1.8}))"
+python -c "from analysis.classifier import classify_entry; from analysis.label_validation.label_pipeline import CLASSIFIER_FEATURES; print(classify_entry({k: 0.0 for k in CLASSIFIER_FEATURES}))"
 
 # 설계·검증 재현 (step1~5)
 python analysis/label_validation/step1_threshold_check.py --sweep
@@ -123,3 +123,12 @@ cd web && npm install && npm run dev
 
 KOSPI 약 800종목, 1분봉 약 1년치. **GitHub Release**로 배포(`analysis/data/`는 gitignore).
 Release zip을 `analysis/data/`에 풀면 `analysis/data/min1/{code}.parquet` 구조가 된다.
+
+데이터를 저장소 밖(공유 드라이브 등)에 두려면 `.env`의 `MIRAE_DATA_ROOT`로 상위 폴더를
+지정한다(미지정 시 `analysis/data`). 그 폴더 아래 `min1/`·`.cache/`가 있어야 한다.
+
+## 검증/오프라인 (LLM 토큰 0)
+
+`MIRAE_DISABLE_LLM=1`이면 키가 있어도 모든 LLM 문장 생성(리포트·총괄 대화·알림·심리)이
+룰/템플릿 폴백으로 떨어진다. 유저플로우/데이터 검증 시 토큰을 쓰지 않고 돌릴 수 있다.
+(리포트 본문만 막으려면 `build_*_summary(..., llm=False)`.)
