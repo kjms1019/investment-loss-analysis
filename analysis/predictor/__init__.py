@@ -4,7 +4,7 @@ The predictor consumes results accumulated by the orchestrator and evaluates
 new entry events or live position updates for repeated mistake risk.
 """
 
-from .predictor import NotificationPolicy, TradeRiskPredictor
+from .predictor import NotificationPolicy, PredictorScoringConfig, TradeRiskPredictor
 from .schema import (
     EntryContext,
     HistoricalTrainingExample,
@@ -21,6 +21,7 @@ __all__ = [
     "NotificationPolicy",
     "PositionSnapshot",
     "PredictorEvent",
+    "PredictorScoringConfig",
     "PredictorStorage",
     "RiskSignal",
     "TradeRiskPredictor",

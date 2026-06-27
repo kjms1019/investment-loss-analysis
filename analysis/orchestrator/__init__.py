@@ -26,6 +26,7 @@ from .planned_entry_predictor import (
 )
 from .interaction import build_interaction_state
 from .pipeline import run_pipeline
+from .streaming_runtime import StreamingRiskRuntime
 
 __all__ = [
     "CurrentHoldingInput",
@@ -43,4 +44,5 @@ __all__ = [
     "evaluate_current_holdings",
     "evaluate_planned_entries",
     "run_pipeline",
+    "StreamingRiskRuntime",
 ]

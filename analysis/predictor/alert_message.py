@@ -1,8 +1,8 @@
-"""실시간 알림 문장 생성 (LLM).
+"""Real-time alert message generation.
 
-예측기 RiskSignal(점수·유형·근거)을 친근하고 위협적이지 않은 경고 1~2문장으로 옮긴다.
-대량·실시간이라 저렴·빠른 모델(ALERT_LLM_MODEL=haiku) 사용. 키 없으면 룰 템플릿 폴백.
-예측기의 점수 계산엔 LLM이 안 들어간다 — 여기는 '표현'만. (design-brief 화면 ⑥)
+The predictor calculates risk. This module only turns a RiskSignal into a short
+user-facing sentence. If LLM is disabled or unavailable, deterministic Korean
+fallback templates are used.
 """
 from __future__ import annotations
 
@@ -11,39 +11,42 @@ from typing import Any
 
 from analysis.llm import generate
 
-_SYSTEM = """너는 투자 코치 '왜 잃었지?'의 실시간 알림 작성기다.
-주어진 사실(JSON: 시점·유형·위험도·근거·종목·미실현손익)로 짧고 친근한 경고를
-1~2문장(80자 내외)으로 쓴다.
+_SYSTEM = """You write short Korean alerts for a stock-trading reflection service.
+Use only the supplied JSON facts: timing, problem type, risk level, reasons,
+stock code, and unrealized return. Do not invent numbers or advice. Avoid blame
+and direct buy/sell instructions. Output only 1-2 user-facing Korean sentences."""
 
-원칙:
-1. 입력에 없는 수치·사실을 지어내지 않는다.
-2. 위협 금지, 비난 금지. 사후 사실 서술형(예: "당신은 이런 경향이 있어요").
-3. 매매 추천·미래 지시 금지(규제). "사라/팔라"가 아니라 "조심해볼까요" 톤.
-4. 알림 문장만 출력(머리말·따옴표·마크다운 없이)."""
-
-_PROBLEM_KR = {"entry_error": "진입오류", "stop_loss_failure": "손절실패", "unknown": "주의"}
+_PROBLEM_KR = {
+    "entry_error": "\uc9c4\uc785\uc624\ub958",
+    "stop_loss_failure": "\uc190\uc808\uc2e4\ud328",
+    "unknown": "\uc8fc\uc758",
+}
 
 
 def _template(signal: Any) -> str:
-    when = "지금 사려는 종목" if signal.mode == "entry" else "보유 종목"
-    prob = _PROBLEM_KR.get(signal.problem_type, "주의")
+    when = "\uc9c0\uae08 \uc0ac\ub824\ub294 \uc885\ubaa9" if signal.mode == "entry" else "\ubcf4\uc720 \uc885\ubaa9"
+    prob = _PROBLEM_KR.get(signal.problem_type, "\uc8fc\uc758")
     if signal.mode == "entry":
-        return f"{when}, 과거 '{prob}' 패턴과 비슷한 상황이에요. 한 번 더 생각해볼까요?"
-    return f"{when}이 손절 기준에 가까워요. 평소 '{prob}' 경향이 있으니 미리 정한 기준을 지켜보세요."
+        return f"{when}, \uacfc\uac70 '{prob}' \ud328\ud134\uacfc \ube44\uc2b7\ud55c \uc0c1\ud669\uc774\uc5d0\uc694. \ud55c \ubc88 \ub354 \uc0dd\uac01\ud574\ubcfc\uae4c\uc694?"
+    return f"{when}\uc774 \uc190\uc808 \uae30\uc900\uc5d0 \uac00\uae4c\uc6cc\uc694. \ud3c9\uc18c '{prob}' \uacbd\ud5a5\uc774 \uc788\uc73c\ub2c8 \ubbf8\ub9ac \uc815\ud55c \uae30\uc900\uc744 \uc9c0\ucf1c\ubcf4\uc138\uc694."
 
 
 def build_alert_message(signal: Any, *, fallback: str = "") -> str:
-    """RiskSignal → 알림 문장. should_alert 여부와 무관하게 문장만 만든다."""
+    """Return an alert sentence. Risk calculation never depends on this text."""
     facts = {
-        "시점": "오늘 매수 직전" if signal.mode == "entry" else "보유 중 현재",
-        "유형": _PROBLEM_KR.get(signal.problem_type, "주의"),
-        "위험도": signal.risk_level,
-        "근거": signal.reasons,
-        "종목": signal.code,
-        "미실현손익_pct": (signal.features or {}).get("unrealized_return_pct"),
+        "timing": "entry_before_buy" if signal.mode == "entry" else "live_position",
+        "problem_type": _PROBLEM_KR.get(signal.problem_type, "\uc8fc\uc758"),
+        "risk_level": signal.risk_level,
+        "reasons": signal.reasons,
+        "code": signal.code,
+        "unrealized_return_pct": (signal.features or {}).get("unrealized_return_pct"),
     }
     fb = fallback or _template(signal)
     return generate(
-        _SYSTEM, json.dumps(facts, ensure_ascii=False),
-        kind="alert", max_tokens=120, fallback=fb,
+        _SYSTEM,
+        json.dumps(facts, ensure_ascii=False),
+        kind="alert",
+        max_tokens=120,
+        fallback=fb,
+        max_output_chars=160,
     )

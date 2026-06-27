@@ -1,15 +1,15 @@
-"""공용 Claude(Anthropic) LLM 클라이언트.
+"""?⑤벊??Claude(Anthropic) LLM ?????곷섧??
 
-ANTHROPIC_API_KEY + anthropic 패키지가 있으면 Claude를 호출하고, 없거나 실패하면
-fallback(룰/템플릿 문구)을 반환한다 → 키 없어도 서비스가 안 깨진다.
+ANTHROPIC_API_KEY + anthropic ???텕筌왖揶쎛 ??됱몵筌?Claude???紐꾪뀱??랁? ??얘탢????쎈솭??롢늺
+fallback(????쀫탣???얜㈇????獄쏆꼹???뺣뼄 ??????곷선????뺥돩??? ??繹먥뫁彛??
 
-모든 LLM 자연어 생성(리포트·거래 원인설명·실시간 알림·총괄 대화)이 이 헬퍼를 공유한다.
-원칙: 사실(숫자·근거)은 호출자가 구조화해 넘기고, LLM은 '표현'만 한다(환각 방지).
+筌뤴뫀諭?LLM ?癒?염????밴쉐(?귐뗫７?留욌０援???癒?뵥??살구夷??쇰뻻揶????뵝夷뚨룯?룻겣 ???????????곭몴??⑤벊???뺣뼄.
+?癒?뒅: ??????ъ쁽夷뚧뉩?④탢)?? ?紐꾪뀱?癒? ?닌듼?酉鍮???띾┛?? LLM?? '??쀬겱'筌???뺣뼄(??띿퍟 獄쎻뫗?).
 
-모델 선택(kind):
-  "default" → LLM_MODEL        (리포트·거래설명, 품질)  기본 claude-sonnet-4-6
-  "alert"   → ALERT_LLM_MODEL  (실시간 알림, 저렴·빠름)  기본 claude-haiku-4-5-20251001
-  "psych"   → PSYCH_LLM_MODEL  (심리 진단)
+筌뤴뫀???醫뤾문(kind):
+  "default" ??LLM_MODEL        (?귐뗫７?留욌０援??뤾퐬筌? ??됱춳)  疫꿸퀡??claude-sonnet-4-6
+  "alert"   ??ALERT_LLM_MODEL  (??쇰뻻揶????뵝, ????붾８?뚨뵳?  疫꿸퀡??claude-haiku-4-5-20251001
+  "psych"   ??PSYCH_LLM_MODEL  (????筌욊쑬??
 """
 from __future__ import annotations
 
@@ -44,21 +44,21 @@ def _client():
 
 
 def _llm_disabled() -> bool:
-    """검증/오프라인용 강제 차단 스위치. 키가 있어도 토큰을 안 쓰게 한다.
+    """野꺜筌???쎈늄??깆뵥??揶쏅벡??筌△뫀????쇱맄燁? ??? ??됰선???醫뤾쿃?????怨뚯쓺 ??뺣뼄.
 
-    MIRAE_DISABLE_LLM=1|true|yes|on 이면 모든 LLM 생성이 fallback 으로 떨어진다.
-    (키가 없을 때 자동 fallback 과 별개로, '키는 있지만 일부러 안 부르는' 검증용.)
+    MIRAE_DISABLE_LLM=1|true|yes|on ????筌뤴뫀諭?LLM ??밴쉐??fallback ??곗쨮 ??λ선筌욊쑬??
+    (??? ??곸뱽 ???癒?짗 fallback ??癰귢쑨而삥에? '??삳뮉 ???筌?????????봔?쒕??? 野꺜筌앹빘??)
     """
     return os.getenv("MIRAE_DISABLE_LLM", "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def available() -> bool:
-    """LLM 호출 가능(키+패키지) 여부. 차단 스위치가 켜지면 False."""
+    """LLM ?紐꾪뀱 揶쎛???????텕筌왖) ???. 筌△뫀????쇱맄燁살꼵? ?녹뮇?筌?False."""
     return not _llm_disabled() and _client() is not None
 
 
 def strip_code_fence(text: str) -> str:
-    """LLM이 ```json ... ``` 으로 감싸 반환할 때 펜스를 벗겨 순수 본문만 반환."""
+    """LLM??```json ... ``` ??곗쨮 揶쏅Ŋ??獄쏆꼹???????뽯뮞??甕곗り볼 ??뽯땾 癰귣챶揆筌?獄쏆꼹??"""
     t = (text or "").strip()
     if t.startswith("```"):
         t = t[3:]
@@ -83,8 +83,9 @@ def generate(
     max_tokens: int = 1024,
     temperature: float = 0.3,
     fallback: str = "",
+    max_output_chars: Optional[int] = None,
 ) -> str:
-    """Claude로 텍스트 생성. 불가/실패/차단 시 fallback 반환."""
+    """Claude嚥???용뮞????밴쉐. ?븍뜃?/??쎈솭/筌△뫀????fallback 獄쏆꼹??"""
     if _llm_disabled():
         return fallback
     client = _client()
@@ -100,6 +101,26 @@ def generate(
         )
         parts = [b.text for b in resp.content if getattr(b, "type", None) == "text"]
         text = "".join(parts).strip()
-        return text or fallback
+        return _clean_generated_text(text, fallback=fallback, max_output_chars=max_output_chars)
     except Exception:
         return fallback
+
+def _clean_generated_text(
+    text: str,
+    *,
+    fallback: str = "",
+    max_output_chars: Optional[int] = None,
+) -> str:
+    """Small UX guardrail for natural-language LLM output.
+
+    This does not judge facts. It only removes common wrapping artifacts and
+    falls back when the model ignores a strict length budget.
+    """
+    cleaned = strip_code_fence(text).strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {"'", '"'}:
+        cleaned = cleaned[1:-1].strip()
+    if not cleaned:
+        return fallback
+    if max_output_chars is not None and len(cleaned) > max_output_chars:
+        return fallback
+    return cleaned

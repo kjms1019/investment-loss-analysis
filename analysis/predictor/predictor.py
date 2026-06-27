@@ -22,6 +22,44 @@ ENTRY_ERROR = "entry_error"
 STOP_LOSS_FAILURE = "stop_loss_failure"
 
 
+@dataclass(frozen=True)
+class PredictorScoringConfig:
+    """Tunable scoring thresholds for runtime alerts.
+
+    Label definitions stay fixed. These values only control alert sensitivity
+    and risk bands, so they can be calibrated with production data later.
+    """
+
+    risk_medium: float = 0.45
+    risk_high: float = 0.75
+    entry_base_score: float = 0.15
+    live_base_score: float = 0.12
+    profile_prior_weight: float = 0.25
+    profile_average_weight: float = 0.20
+    entry_profile_max_add: float = 0.35
+    live_profile_max_add: float = 0.20
+    low_recent_win_rate: float = 0.35
+    high_recent_win_rate: float = 0.65
+    quick_reentry_minutes: float = 60.0
+    large_previous_loss_pct: float = -5.0
+    high_same_day_trade_count: int = 4
+    weak_market_mood: float = -0.4
+    position_loss_pct: float = -3.0
+    large_unrealized_loss_pct: float = -7.0
+    stop_breach_delay_minutes: float = 30.0
+    early_holding_minutes: float = 60.0
+    early_loss_pct: float = -2.0
+    sharp_drawdown_pct: float = -5.0
+    fast_drop_5m_pct: float = -2.0
+    high_volatility_30m_pct: float = 3.0
+    entry_range_top: float = 0.85
+    entry_rsi_overheated: float = 70.0
+    entry_near_high20: float = 0.99
+    entry_ret120_surge: float = 0.05
+    entry_volume_chase: float = 1.8
+    entry_volume_range_min: float = 0.7
+    entry_context_max_add: float = 0.30
+
 @dataclass
 class NotificationPolicy:
     """Deduplicate alerts while still allowing severity escalation."""
@@ -59,11 +97,13 @@ class TradeRiskPredictor:
         profile: Optional[UserRiskProfile] = None,
         notification_policy: Optional[NotificationPolicy] = None,
         min_ml_examples: int = 20,
+        scoring_config: Optional[PredictorScoringConfig] = None,
     ) -> None:
         self.storage = storage
         self.profile = profile
         self.notification_policy = notification_policy or NotificationPolicy()
         self.min_ml_examples = min_ml_examples
+        self.scoring_config = scoring_config or PredictorScoringConfig()
         self._models: dict[str, object] = {}
         self._feature_names: dict[str, list[str]] = {}
 
@@ -74,13 +114,19 @@ class TradeRiskPredictor:
         user_id: str = "default",
         profile_db_path: str | None = None,
         notification_policy: Optional[NotificationPolicy] = None,
+        scoring_config: Optional[PredictorScoringConfig] = None,
     ) -> "TradeRiskPredictor":
         if profile_db_path is None:
             storage = PredictorStorage(db_path=db_path)
         else:
             storage = PredictorStorage(db_path=db_path, profile_db_path=profile_db_path)
         profile = storage.load_user_profile(user_id=user_id)
-        return cls(storage=storage, profile=profile, notification_policy=notification_policy)
+        return cls(
+            storage=storage,
+            profile=profile,
+            notification_policy=notification_policy,
+            scoring_config=scoring_config,
+        )
 
     def fit(self, examples: Iterable[HistoricalTrainingExample]) -> None:
         """Train Random Forest models when enough labeled data is available."""
@@ -168,44 +214,45 @@ class TradeRiskPredictor:
         context: EntryContext,
         profile: UserRiskProfile,
     ) -> tuple[float, ProblemType, list[str]]:
-        score = 0.15
+        config = self.scoring_config
+        score = config.entry_base_score
         reasons: list[str] = []
         problem_type: ProblemType = _dominant_or_unknown(profile)
 
         if profile.total_analyzed_trades > 0:
             prior = max(profile.prior_for(ENTRY_ERROR), profile.prior_for(STOP_LOSS_FAILURE))
             avg_score = profile.average_score_for(problem_type) if problem_type != "unknown" else 0.0
-            score += min(prior * 0.25 + avg_score * 0.2, 0.35)
+            score += min(prior * config.profile_prior_weight + avg_score * config.profile_average_weight, config.entry_profile_max_add)
             reasons.append(f"profile_prior:{problem_type}")
 
         if context.recent_win_rate is not None and context.recent_trade_count >= 3:
-            if context.recent_win_rate < 0.35:
+            if context.recent_win_rate < config.low_recent_win_rate:
                 score += 0.18
                 reasons.append("low_recent_win_rate")
-            elif context.recent_win_rate > 0.65:
+            elif context.recent_win_rate > config.high_recent_win_rate:
                 score -= 0.05
 
-        if context.minutes_since_last_loss is not None and context.minutes_since_last_loss <= 60:
+        if context.minutes_since_last_loss is not None and context.minutes_since_last_loss <= config.quick_reentry_minutes:
             score += 0.22
             problem_type = ENTRY_ERROR
             reasons.append("quick_reentry_after_loss")
 
-        if context.last_loss_pct is not None and context.last_loss_pct <= -5:
+        if context.last_loss_pct is not None and context.last_loss_pct <= config.large_previous_loss_pct:
             score += 0.16
             reasons.append("large_previous_loss")
 
-        if context.same_day_trade_count >= 4:
+        if context.same_day_trade_count >= config.high_same_day_trade_count:
             score += 0.12
             problem_type = ENTRY_ERROR
             reasons.append("high_same_day_trade_count")
 
-        if context.market_mood_score is not None and context.market_mood_score < -0.4:
+        if context.market_mood_score is not None and context.market_mood_score < config.weak_market_mood:
             score += 0.08
             reasons.append("weak_market_mood")
 
-        # 진입맥락(min1) — 과열·추격 자리는 진입오류 위험 가산.
-        # 분석단 분류기와 동일 피처(entry_features_window)를 써서 "분류 근거 = 예측 근거" 유지.
-        ctx_score, ctx_reasons = _entry_context_risk(context.features)
+        # ?꿔꺂?????鶯ㅼ룆?븀뙼???min1) ????縕???怨뺤깓????ㅻ쿋??????????꿔꺂????????怨몄뵒 ????꾣뤃????醫딆쓧???
+        # ???곗뒩泳??????곗뒩泳?봺異??녿옐??좊펳?? ????怨뺣윞 ??濚밸Ŧ?녘キ?entry_features_window)????欲꼲??"???곗뒩泳?봺異???????筌?= ???? ??????筌? ???.
+        ctx_score, ctx_reasons = _entry_context_risk(context.features, config)
         if ctx_reasons:
             score += ctx_score
             problem_type = ENTRY_ERROR
@@ -221,21 +268,22 @@ class TradeRiskPredictor:
         snapshot: PositionSnapshot,
         profile: UserRiskProfile,
     ) -> tuple[float, ProblemType, list[str]]:
-        score = 0.12
+        config = self.scoring_config
+        score = config.live_base_score
         reasons: list[str] = []
         problem_type: ProblemType = _dominant_or_unknown(profile)
 
         if profile.total_analyzed_trades > 0:
             stop_prior = profile.prior_for(STOP_LOSS_FAILURE)
             entry_prior = profile.prior_for(ENTRY_ERROR)
-            score += min(max(stop_prior, entry_prior) * 0.2, 0.2)
+            score += min(max(stop_prior, entry_prior) * config.profile_average_weight, config.live_profile_max_add)
             reasons.append(f"profile_prior:{problem_type}")
 
         pnl = snapshot.unrealized_return_pct
-        if pnl <= -3:
+        if pnl <= config.position_loss_pct:
             score += 0.14
             reasons.append("position_in_loss")
-        if pnl <= -7:
+        if pnl <= config.large_unrealized_loss_pct:
             score += 0.2
             problem_type = STOP_LOSS_FAILURE
             reasons.append("large_unrealized_loss")
@@ -245,30 +293,30 @@ class TradeRiskPredictor:
             problem_type = STOP_LOSS_FAILURE
             reasons.append("stop_loss_breached")
 
-        if snapshot.minutes_since_stop_breach is not None and snapshot.minutes_since_stop_breach >= 30:
+        if snapshot.minutes_since_stop_breach is not None and snapshot.minutes_since_stop_breach >= config.stop_breach_delay_minutes:
             score += 0.15
             problem_type = STOP_LOSS_FAILURE
             reasons.append("delayed_action_after_stop_breach")
 
-        if snapshot.holding_minutes <= 60 and pnl <= -2:
+        if snapshot.holding_minutes <= config.early_holding_minutes and pnl <= config.early_loss_pct:
             score += 0.12
             if problem_type != STOP_LOSS_FAILURE:
                 problem_type = ENTRY_ERROR
             reasons.append("early_loss_after_entry")
 
-        if snapshot.drawdown_from_high_pct <= -5:
+        if snapshot.drawdown_from_high_pct <= config.sharp_drawdown_pct:
             score += 0.1
             reasons.append("sharp_drawdown_from_high")
 
-        if snapshot.price_change_5m_pct is not None and snapshot.price_change_5m_pct <= -2:
+        if snapshot.price_change_5m_pct is not None and snapshot.price_change_5m_pct <= config.fast_drop_5m_pct:
             score += 0.08
             reasons.append("fast_short_term_drop")
 
-        if snapshot.volatility_30m_pct is not None and snapshot.volatility_30m_pct >= 3:
+        if snapshot.volatility_30m_pct is not None and snapshot.volatility_30m_pct >= config.high_volatility_30m_pct:
             score += 0.05
             reasons.append("high_intraday_volatility")
 
-        if snapshot.market_mood_score is not None and snapshot.market_mood_score < -0.4:
+        if snapshot.market_mood_score is not None and snapshot.market_mood_score < config.weak_market_mood:
             score += 0.05
             reasons.append("weak_market_mood")
 
@@ -305,7 +353,7 @@ class TradeRiskPredictor:
         model_used: str,
         features: Dict[str, float],
     ) -> RiskSignal:
-        level = _risk_level(score)
+        level = _risk_level(score, self.scoring_config)
         signal = RiskSignal(
             user_id=user_id,
             trade_id=trade_id,
@@ -321,7 +369,7 @@ class TradeRiskPredictor:
         )
         signal.should_alert = self.notification_policy.should_send(signal)
         if signal.should_alert:
-            # 알림 발생 시에만 LLM 문장 생성(대량 호출 방지). 키 없으면 룰 템플릿 폴백.
+            # ??????熬곣뫖利든뜏類ｋ렱????嶺?獄?툦??LLM ???戮?뜪?????꾩룆????????癲ル슢?????熬곣뫖?삥납?). ??????ㅼ굡?類㎮뵾????????萸???????
             from .alert_message import build_alert_message
             signal.message = build_alert_message(signal)
         return signal
@@ -339,10 +387,10 @@ class TradeRiskPredictor:
         return UserRiskProfile(user_id=user_id, source="empty")
 
 
-def _risk_level(score: float) -> str:
-    if score >= 0.75:
+def _risk_level(score: float, config: PredictorScoringConfig) -> str:
+    if score >= config.risk_high:
         return "high"
-    if score >= 0.45:
+    if score >= config.risk_medium:
         return "medium"
     return "low"
 
@@ -361,11 +409,11 @@ def _clamp(value: float) -> float:
     return max(0.0, min(float(value), 1.0))
 
 
-def _entry_context_risk(features: Dict[str, float]) -> tuple[float, list[str]]:
-    """진입맥락(min1) 과열·추격 신호 → 진입오류 위험 가산치와 사유.
+def _entry_context_risk(features: Dict[str, float], config: PredictorScoringConfig) -> tuple[float, list[str]]:
+    """?꿔꺂?????鶯ㅼ룆?븀뙼???min1) ??縕???怨뺤깓????ㅻ쿋???????ъ군濚????꿔꺂????????怨몄뵒 ????꾣뤃????醫딆쓧?????????? ????.
 
-    features 가 비어있으면(시세 미연결) (0, []) 을 반환해 기존 행동기반 점수를 유지한다.
-    가산 상한 0.30 — 행동기반 경계 거래를 알림 임계(0.7) 위로 올릴 수 있되 과적합 방지.
+    features ??醫딆쓧? ????猷뱀쟼???繹먮겧嫄х솾???嶺??????붺몭?겹럷?룐뫕?⑶뇦猿뗫닔?? (0, []) ???熬곣뫖利???????뚯????????ㅻ깹壤???뚯???維◈????????????嶺뚮㉡???
+    ??醫딆쓧???????브컯??0.30 ??????ㅻ깹壤???뚯???維◈??嚥▲굧?????꿸쑨????亦껋꺀?좉괴??????????꾤뙴??0.7) ????썹땟怨⒲뀋????????????⑸룎 ??縕?????熬곣뫖?삥납?.
     """
     if not features:
         return 0.0, []
@@ -377,22 +425,22 @@ def _entry_context_risk(features: Dict[str, float]) -> tuple[float, list[str]]:
 
     add = 0.0
     reasons: list[str] = []
-    if rp20 is not None and rp20 >= 0.85:        # 20봉 레인지 상단 추격
+    if rp20 is not None and rp20 >= config.entry_range_top:        # 20?????繹먮굝?꿰솾?レ뒩?? ????욱룏?????ㅻ쿋???
         add += 0.14
         reasons.append("range_top_chase")
-    if rsi is not None and rsi >= 70:            # RSI 과열권 진입
+    if rsi is not None and rsi >= config.entry_rsi_overheated:            # RSI ??縕???怨뺣샨???꿔꺂?????
         add += 0.12
         reasons.append("overheated_rsi")
-    if vs_high20 is not None and vs_high20 >= 0.99:  # 20봉 고가 1% 이내 추격
+    if vs_high20 is not None and vs_high20 >= config.entry_near_high20:  # 20?????쒙쭫? 1% ????????ㅻ쿋???
         add += 0.10
         reasons.append("near_high20_chase")
-    if ret120 is not None and ret120 >= 0.05:    # 직전 120분 +5% 급등 직후 진입
+    if ret120 is not None and ret120 >= config.entry_ret120_surge:    # ?꿔꺂?????120??+5% ???궰?嶺뚮씞?쀧뵳??꿔꺂??????꿔꺂?????
         add += 0.08
         reasons.append("post_surge_entry")
-    if volr is not None and volr >= 1.8 and rp20 is not None and rp20 >= 0.7:
-        add += 0.06                              # 상단 + 거래량 급증 동반 추격
+    if volr is not None and volr >= config.entry_volume_chase and rp20 is not None and rp20 >= config.entry_volume_range_min:
+        add += 0.06                              # ????욱룏??+ ?꿸쑨?????????궰?嶺뚮씚裕????????뼐 ???ㅻ쿋???
         reasons.append("volume_chase")
-    return min(add, 0.30), reasons
+    return min(add, config.entry_context_max_add), reasons
 
 
 def _random_forest_classifier():
