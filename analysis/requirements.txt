@@ -18,6 +18,11 @@ scikit-learn==1.8.0
 # ─── LLM (Claude 자연어 생성: 리포트·거래설명·알림·총괄대화) ──────────────────
 anthropic==0.107.0
 
+# ─── HTTP API (프론트 web/ 연동: analysis.api.main) ──────────────────────────
+fastapi==0.138.1
+uvicorn[standard]==0.49.0
+python-multipart==0.0.20
+
 # ─── Jupyter 환경 ────────────────────────────────────────────────────────────
 jupyterlab==4.5.7
 ipykernel==7.2.0

@@ -39,7 +39,7 @@ from analysis.label_validation.label_pipeline import (
 from . import agent_registry as registry
 from .interaction import build_interaction_state
 from .router import route_cycle
-from .schema import AgentResult, OrchestratorRunResult
+from .schema import AgentResult, NormalizedTrade, OrchestratorRunResult
 from .storage import DEFAULT_DB_PATH, OrchestratorStorage
 from analysis.user_profile import (
     DEFAULT_PROFILE_DB_PATH,
@@ -169,6 +169,25 @@ def run_pipeline(
             raw_file_path=trade_csv_path, row_count=len(raw_trades),
         )
         storage.create_run(run_id=run_id, batch_id=batch_id)
+
+        # 3-1. 손실 사이클을 normalized_trades 로 저장 — 리포트(종목명·코드·진입일)의 소스.
+        #      agent_results.trade_id ↔ normalized_trades.trade_id 로 조인된다.
+        storage.insert_normalized_trades(
+            NormalizedTrade(
+                trade_id=cycle.trade_id,
+                batch_id=batch_id,
+                source_row_index=i,
+                executed_at=cycle.entry_dt.isoformat() if cycle.entry_dt else None,
+                code=cycle.code,
+                name=cycle.name,
+                side="BUY",
+                qty=cycle.qty,
+                price=cycle.entry_price,
+                raw_payload={"exit_dt": cycle.exit_dt.isoformat() if cycle.exit_dt else None,
+                             "realized_pnl_pct": cycle.realized_pnl_pct},
+            )
+            for i, cycle in enumerate(loss_cycles)
+        )
 
         # 4. 사이클별 라우팅 → 결과 채택
         for cycle in loss_cycles:
