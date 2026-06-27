@@ -4,7 +4,15 @@
 이 모듈은 그 결과물인 **학습된 분류 모델**을 서비스가 바로 쓰도록 fit/predict/save/load
 API로 노출한다.
 
-입력  : 진입맥락 피처 dict (label_pipeline.FEATURES 키)
+용도 한정: 이 분류기는 **분석단(청산된 손실거래의 사후 분류)** 전용이다.
+학습·추론 모두 label_pipeline.CLASSIFIER_FEATURES(진입맥락 15 + 사후경로 3,
+post_breach_run·mae_ratio·breach_time_frac) **전체경로 피처**를 쓴다.
+  ※ 진입 전 예측(예정매수/현재보유)은 이 모델이 아니라 predictor 의 룰
+    스코어러를 쓴다 — 그 시점엔 사후경로 피처가 존재하지 않기 때문.
+    진입맥락 피처(FEATURES, 15)만 넘기면 빠진 사후피처 3개가 median 으로
+    조용히 대치되어 엉뚱한 점수가 나오니 절대 그렇게 쓰지 말 것.
+
+입력  : 분류기 전체경로 피처 dict (label_pipeline.CLASSIFIER_FEATURES 키)
 출력  : {entry_error_score, stop_loss_failure_score, label, confidence}
 모델  : 로지스틱 회귀(해석 가능 — 계수가 곧 근거). 라벨 1 = stop_loss_failure.
 
@@ -21,7 +29,7 @@ from typing import Dict, Union
 import numpy as np
 import pandas as pd
 
-from analysis.label_validation.label_pipeline import FEATURES
+from analysis.label_validation.label_pipeline import CLASSIFIER_FEATURES
 
 ARTIFACT_DIR = Path(__file__).resolve().parent / "artifacts"
 DEFAULT_MODEL = ARTIFACT_DIR / "entry_stop_clf.joblib"
@@ -33,7 +41,9 @@ class EntryStopClassifier:
     def __init__(self, pipeline, meta: Dict):
         self.pipeline = pipeline
         self.meta = meta
-        self.features = meta.get("features", FEATURES)
+        # 전체경로 분류기 — meta 없을 때의 기본값도 CLASSIFIER_FEATURES 로 둔다
+        # (FEATURES(15)로 폴백하면 사후피처 3개가 누락돼 학습 아티팩트와 어긋남).
+        self.features = meta.get("features", CLASSIFIER_FEATURES)
 
     # ── 학습 ──────────────────────────────────────────────────────────────
     @classmethod
@@ -141,7 +151,7 @@ def _fit_runtime_fallback() -> EntryStopClassifier:
     orchestrator usable across local sklearn minor versions.
     """
     from analysis.label_validation.label_pipeline import (
-        FEATURES,
+        CLASSIFIER_FEATURES,
         clean_features,
         cluster_labels,
         generate_designed,
@@ -150,8 +160,9 @@ def _fit_runtime_fallback() -> EntryStopClassifier:
     df, diag = generate_designed(1200, 380, 1900, seed=42)
     df = clean_features(df)
     y, info = cluster_labels(df, seed=42)
+    # 커밋 아티팩트와 동일하게 전체경로 피처(CLASSIFIER_FEATURES, 18)로 학습.
     return EntryStopClassifier.fit(
-        df[FEATURES],
+        df[CLASSIFIER_FEATURES],
         y,
         seed=42,
         meta_extra={
