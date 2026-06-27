@@ -7,7 +7,7 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable, Optional
 
-from .schema import AgentResult, NormalizedTrade, RawTradeRow
+from .schema import AgentResult, CommonFeatureBundle, NormalizedTrade, RawTradeRow
 
 
 DEFAULT_DB_PATH = "analysis/data/orchestrator.sqlite3"
@@ -92,6 +92,20 @@ class OrchestratorStorage:
             )
             """
         )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS feature_bundles (
+                run_id TEXT,
+                trade_id TEXT,
+                feature_status TEXT,
+                features_json TEXT,
+                data_quality_json TEXT,
+                notes_json TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (run_id, trade_id)
+            )
+            """
+        )
         self.conn.commit()
 
     def create_batch(
@@ -155,6 +169,26 @@ class OrchestratorStorage:
         )
         self.conn.commit()
 
+    def insert_feature_bundles(self, run_id: str, bundles: Iterable[CommonFeatureBundle]) -> None:
+        self.conn.executemany(
+            """
+            INSERT OR REPLACE INTO feature_bundles
+            (run_id, trade_id, feature_status, features_json, data_quality_json, notes_json)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    run_id,
+                    bundle.trade_id,
+                    bundle.feature_status,
+                    json.dumps(bundle.features, ensure_ascii=False),
+                    json.dumps(bundle.data_quality, ensure_ascii=False),
+                    json.dumps(bundle.notes, ensure_ascii=False),
+                )
+                for bundle in bundles
+            ],
+        )
+        self.conn.commit()
     def create_run(self, run_id: str, batch_id: str, status: str = "running") -> None:
         self.conn.execute(
             """
