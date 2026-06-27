@@ -11,7 +11,10 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from analysis.common.paths import CODES_CSV, MIN1_DIR
+# 데이터 루트 단일 소스(MIRAE_DATA_ROOT). DATA_ROOT 는 binsu 코드 호환용 별칭.
+from analysis.common.paths import CODES_CSV, DATA_DIR, MIN1_DIR
+
+DATA_ROOT = DATA_DIR
 
 _min1_cache: dict[str, Optional[pd.DataFrame]] = {}
 _min1_ohlcv_cache: dict[str, Optional[pd.DataFrame]] = {}
@@ -75,6 +78,7 @@ def entry_market_features(
     before = df[df["datetime"] <= pd.to_datetime(when)].tail(pre_minutes)
     if before.empty:
         return {}
+    # 지연 import: label_validation ↔ common 순환 import 방지
     from analysis.label_validation.label_pipeline import FEATURES, entry_features_window
 
     feats = entry_features_window(
@@ -84,6 +88,7 @@ def entry_market_features(
         before["close"].to_numpy(float),
         before["volume"].to_numpy(float),
     )
+    # 분류기 입력 키(FEATURES)만, None 제외 — 예측기 룰/모델이 바로 소비
     return {k: float(v) for k in FEATURES if (v := feats.get(k)) is not None}
 
 

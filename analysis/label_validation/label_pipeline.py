@@ -369,3 +369,4 @@ def generate_designed(n_target, hold_min, hold_max, seed):
 def clean_features(df):
     """피처 결측/무한 제거."""
     return df.replace([np.inf, -np.inf], np.nan).dropna(subset=FEATURES)
+
