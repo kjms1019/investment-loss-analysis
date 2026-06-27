@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import {
-  api, type Alert, type AllTrade, type Dashboard, type Pattern, type Trade, type UserItem, type DomainId,
+  api, type Alert, type AllTrade, type Dashboard, type Trade, type UserItem, type DomainId, type Disposition,
 } from "@/lib/api";
-import { DOMAIN, SEV_LABEL, DomainIcon, Logo, Section, LossBars } from "@/components/why/ui";
+import { DOMAIN, SEV_LABEL, DomainIcon, Logo, Section, LossBars, TradeMiniChart } from "@/components/why/ui";
 
 const ROUTES = ["login", "consent", "upload", "analyze", "dashboard", "trades", "profile", "alerts"] as const;
 type Screen = (typeof ROUTES)[number];
@@ -25,7 +25,7 @@ export default function Home() {
   const [dash, setDash] = useState<Dashboard | null>(null);
   const [trades, setTrades] = useState<Trade[]>([]);
   const [allTrades, setAllTrades] = useState<AllTrade[]>([]);
-  const [patterns, setPatterns] = useState<Pattern[]>([]);
+  const [disp, setDisp] = useState<Disposition | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [err, setErr] = useState<string>("");
 
@@ -43,6 +43,7 @@ export default function Home() {
   const analyzedRef = useRef(false); // 4단계 분석을 한 번이라도 끝냈는지 (재진입 시 재시작 방지)
   const [dxDomain, setDxDomain] = useState<DomainId | null>(null); // 분석 완료 화면에서 호출한 진단 도메인
   const [selTrade, setSelTrade] = useState<number | null>(null);
+  const [seenDomains, setSeenDomains] = useState<DomainId[]>([]); // 진단~거래별을 거친(=본) 도메인들
 
   // 해시 라우팅
   useEffect(() => {
@@ -70,10 +71,11 @@ export default function Home() {
   const loadUser = useCallback((u: string) => {
     if (!u) return;
     setErr("");
+    setSeenDomains([]); setDxDomain(null); // 사용자 바뀌면 '본 도메인'·진단 도메인 초기화
     api.dashboard(u).then(setDash).catch((e) => { setDash(null); setErr(String(e)); });
     api.trades(u).then((d) => setTrades(d.trades)).catch(() => setTrades([]));
     api.allTrades(u).then((d) => setAllTrades(d.trades)).catch(() => setAllTrades([]));
-    api.profile(u).then((d) => setPatterns(d.patterns)).catch(() => setPatterns([]));
+    api.disposition(u).then(setDisp).catch(() => setDisp(null));
     api.alerts(u).then((d) => setAlerts(d.alerts)).catch(() => setAlerts([]));
   }, []);
   useEffect(() => { loadUser(user); }, [user, loadUser]);
@@ -129,9 +131,21 @@ export default function Home() {
         {screen === "consent" && <Consent agreed={consentAgreed} toggle={() => setConsentAgreed((v) => !v)} onBack={() => go("login")} onStart={() => { setConsentDone(true); go("upload"); }} />}
         {screen === "upload" && <Upload users={users} user={user} setUser={setUser} onStart={() => { analyzedRef.current = false; setProgressStep(0); setShowResult(false); go("analyze"); }} />}
         {screen === "analyze" && <Analyze step={progressStep} done={showResult} trades={trades} all={allTrades} onSeeResult={() => setShowResult(true)} onGo={(d) => { setDxDomain(d); go("dashboard"); }} />}
-        {screen === "dashboard" && <DashboardView dash={dash} trades={trades} focus={dxDomain} onCard={(t) => { setFilterType(t); setFilterSev("all"); go("trades"); }} />}
-        {screen === "trades" && <TradesView trades={trades} filterType={filterType} setFilterType={setFilterType} filterSev={filterSev} setFilterSev={setFilterSev} selTrade={selTrade} setSelTrade={setSelTrade} />}
-        {screen === "profile" && <ProfileView patterns={patterns} />}
+        {screen === "dashboard" && <DashboardView dash={dash} all={allTrades} focus={dxDomain} onCard={(t) => { setFilterType(t); setFilterSev("all"); go("trades"); }} />}
+        {screen === "trades" && (() => {
+          const cur: DomainId = dxDomain ?? (dash?.dominant.id as DomainId) ?? "cut";
+          const other: DomainId = cur === "cut" ? "entry" : "cut";
+          const otherCount = dash?.counts[other] ?? 0;
+          const markSeen = () => setSeenDomains((s) => (s.includes(cur) ? s : [...s, cur]));
+          return <TradesView
+            trades={trades} filterType={filterType} setFilterType={setFilterType}
+            filterSev={filterSev} setFilterSev={setFilterSev} selTrade={selTrade} setSelTrade={setSelTrade}
+            other={{ id: other, name: DOMAIN[other].name, count: otherCount, seen: seenDomains.includes(other) }}
+            onSeeOther={() => { markSeen(); setDxDomain(other); setFilterType(other); setFilterSev("all"); setSelTrade(0); go("dashboard"); }}
+            onToProfile={() => { markSeen(); go("profile"); }}
+          />;
+        })()}
+        {screen === "profile" && <ProfileView disp={disp} userName={curUserName} />}
         {screen === "alerts" && <AlertsView alerts={alerts} />}
       </main>
     </div>
@@ -274,6 +288,8 @@ function Analyze({ step, done, trades, all, onSeeResult, onGo }: {
     return { v, color: DOMAIN[t.type].color, dim: false };                // 라우팅 도메인 색
   });
   const stageNote = stage === "all" ? "전체 거래를 불러왔어요" : stage === "loss" ? `‘당신 탓’ 손실 ${lossCount}건을 골라내는 중…` : "진입오류·손절실패로 분류하는 중…";
+  // 카드·축선·헤더는 처음부터 존재한다. 거래내역 파싱 전(step 0)에는 막대만 비우고(레이아웃 안 밀림),
+  // 파싱이 끝나면(step≥1) 막대가 그 자리에 채워진다.
   const chart = chartBars.length > 0 ? (
     <div style={{ background: "#F8F9FA", border: "1px solid #F2F4F6", borderRadius: 16, padding: "18px 18px 16px", marginBottom: 22 }}>
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
@@ -282,7 +298,7 @@ function Analyze({ step, done, trades, all, onSeeResult, onGo }: {
           <Legend color="#ECEEF0" label="전체(이익)" /><Legend color={DOMAIN.entry.color} label="진입오류" /><Legend color={DOMAIN.cut.color} label="손절실패" />
         </div>
       </div>
-      <LossBars values={chartBars} height={100} />
+      <LossBars values={step >= 1 ? chartBars : []} height={100} />
     </div>
   ) : null;
 
@@ -407,13 +423,20 @@ const DX_TEXT: Record<DomainId, { pattern: string; cause: string }> = {
     cause: "직전 손실을 빨리 만회하려는 리벤지 심리나 놓칠라(FOMO)가 작동했어요. 매수 전 점검 없이 충동적으로 들어간 경우가 많아요.",
   },
 };
-function DashboardView({ dash, trades, focus, onCard }: { dash: Dashboard | null; trades: Trade[]; focus: DomainId | null; onCard: (t: DomainId) => void }) {
+function DashboardView({ dash, all, focus, onCard }: { dash: Dashboard | null; all: AllTrade[]; focus: DomainId | null; onCard: (t: DomainId) => void }) {
   if (!dash) return <Loading />;
   const fd: DomainId = focus ?? dash.dominant.id; // 호출한 진단 도메인 (없으면 1순위)
   const m = DOMAIN[fd];
   const od: DomainId = fd === "cut" ? "entry" : "cut";
-  const focusTrades = trades.filter((t) => t.type === fd); // 차트는 선택 도메인만
-  const bars = focusTrades.map((t) => ({ v: t.score ?? 1, color: m.color }));
+  // 분석탭과 동일한 전체거래 손익 차트(이익 위·손실 아래)를 그대로 쓰되, 분석 중인 도메인만 색칠한다.
+  const maxPos = Math.max(1, ...all.filter((t) => t.pnl > 0).map((t) => t.pnl));
+  const maxNeg = Math.max(1, ...all.filter((t) => t.pnl < 0).map((t) => -t.pnl));
+  const focusBars = all.map((t) => {
+    const v = t.pnl >= 0 ? t.pnl / maxPos : -(-t.pnl / maxNeg);
+    return t.type === fd
+      ? { v, color: m.color, dim: false }   // 분석 중인 도메인 → 색
+      : { v, color: "#ECEEF0", dim: true };  // 이익·다른 도메인 → 회색
+  });
   const fc = dash.counts[fd];
   const total = dash.total_loss_trades || (dash.counts.cut + dash.counts.entry);
   const pct = total > 0 ? Math.round((fc / total) * 100) : 0;
@@ -421,24 +444,29 @@ function DashboardView({ dash, trades, focus, onCard }: { dash: Dashboard | null
   return (
     <div>
       <Section step="3" label="복기 루프 · 3단계 진단 대시보드" />
-      <h2 style={{ fontSize: "clamp(24px,4.2vw,36px)", fontWeight: 700, color: "#0B2E59", lineHeight: 1.3, margin: "14px 0 12px" }}>이번에 짚어볼 문제는<br /><span>{m.name}</span>입니다.</h2>
-      <p style={{ color: "#8B95A1", fontSize: 16, lineHeight: 1.65, margin: "0 0 26px", maxWidth: 620 }}>본인 탓 손실 <b style={{ color: "#191F28" }}>{total}건</b> 중 <b style={{ color: m.color }}>{m.name} {fc}건</b>을 깊게 들여다봤어요. 비난이 아니라, 여기서부터 바꿔보자는 신호예요.</p>
+      <h2 style={{ fontSize: "clamp(24px,4.2vw,36px)", fontWeight: 700, color: "#0B2E59", lineHeight: 1.3, margin: "14px 0 12px" }}>이번에 짚어볼 문제는<br /><span style={{ color: m.color, background: m.tint, padding: "0 10px", borderRadius: 10 }}>{m.name}</span>입니다.</h2>
+      <p style={{ color: "#8B95A1", fontSize: 16, lineHeight: 1.65, margin: "0 0 26px", whiteSpace: "nowrap" }}>본인 탓 손실 <b style={{ color: "#191F28" }}>{total}건</b> 중 <b style={{ color: m.color }}>{m.name} {fc}건</b>을 깊게 들여다봤어요. 괜찮아요, 뭐가 문제였을까요?</p>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 13, marginBottom: 22 }}>
-        <Stat label="본인 탓 손실 거래" value={`${total}`} unit="건" />
-        <Stat label="손절실패" value={`${dash.counts.cut}`} unit="건" />
-        <Stat label="진입오류" value={`${dash.counts.entry}`} unit="건" />
-      </div>
-
-      {focusTrades.length > 0 && (
-        <div style={{ background: "#F8F9FA", border: "1px solid #F2F4F6", borderRadius: 16, padding: "18px 18px 16px", marginBottom: 18 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-            <DomainIcon type={fd} size={18} />
-            <div style={{ fontSize: 14.5, fontWeight: 600 }}>{m.name} 거래 {focusTrades.length}건<span style={{ color: "#8B95A1", fontWeight: 400, fontSize: 13, marginLeft: 8 }}>막대 1개 = 거래 1건 · 위험점수 크기</span></div>
-          </div>
-          <LossBars values={bars} height={100} />
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "stretch", gap: 13, marginBottom: 18 }}>
+        <div style={{ flex: "1 1 300px", display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 13 }}>
+          <Stat label="본인 탓 손실 거래" value={`${total}`} unit="건" />
+          <Stat label="손절실패" value={`${dash.counts.cut}`} unit="건" />
+          <Stat label="진입오류" value={`${dash.counts.entry}`} unit="건" />
         </div>
-      )}
+
+        {focusBars.length > 0 && (
+          <div style={{ flex: "1 1 360px", background: "#F8F9FA", border: "1px solid #F2F4F6", borderRadius: 16, padding: "18px 18px 16px", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+              <DomainIcon type={fd} size={18} />
+              <div style={{ fontSize: 14.5, fontWeight: 600 }}>전체 거래 {focusBars.length}건<span style={{ color: "#8B95A1", fontWeight: 400, fontSize: 13, marginLeft: 8 }}>막대 1개 = 거래 1건 · 위 이익 · 아래 손실</span></div>
+              <div style={{ display: "flex", gap: 12, marginLeft: "auto", fontSize: 12, color: "#8B95A1" }}>
+                <Legend color={m.color} label={`${m.name} ${fc}건`} /><Legend color="#ECEEF0" label="그 외 거래" />
+              </div>
+            </div>
+            <LossBars values={focusBars} height={100} />
+          </div>
+        )}
+      </div>
 
       <div style={{ background: m.tint, borderRadius: 16, padding: "20px 20px 22px", marginBottom: 18 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 13 }}>
@@ -463,113 +491,281 @@ function DashboardView({ dash, trades, focus, onCard }: { dash: Dashboard | null
 
 // ── ④ TRADES ─────────────────────────────────────────────────────────────────
 const SIG_W: Record<string, number> = { 확대: 0.35, 지연: 0.3, 물타기: 0.2 };
-function TradesView({ trades, filterType, setFilterType, filterSev, setFilterSev, selTrade, setSelTrade }: {
+function TradesView({ trades, filterType, setFilterType, filterSev, setFilterSev, selTrade, setSelTrade, other, onSeeOther, onToProfile }: {
   trades: Trade[]; filterType: DomainId | "all"; setFilterType: (t: DomainId | "all") => void;
   filterSev: string; setFilterSev: (s: string) => void; selTrade: number | null; setSelTrade: (n: number | null) => void;
+  other: { id: DomainId; name: string; count: number; seen: boolean }; onSeeOther: () => void; onToProfile: () => void;
 }) {
+  const [asking, setAsking] = useState(false);
+  const shouldAsk = other.count > 0 && !other.seen; // 안 본 다른 도메인이 거래가 있으면 물어본다
   const filtered = trades.filter((t) => (filterType === "all" || t.type === filterType) && (filterSev === "all" || t.sev === filterSev));
+  const active = selTrade != null && selTrade < filtered.length ? selTrade : 0;
+  const t = filtered[active];
+  const m = t ? DOMAIN[t.type] : DOMAIN.cut;
+  const eW = Math.round((t?.eScore ?? 0) * 100), cW = Math.round((t?.cScore ?? 0) * 100);
+  const pnlPct = t?.chart?.pnl_pct ?? null;
   return (
     <div>
       <Section step="4" label="복기 루프 · 4단계 거래별 설명" />
       <h2 style={{ fontSize: "clamp(22px,3.6vw,28px)", fontWeight: 700, color: "#0B2E59", margin: "14px 0 8px" }}>거래마다, 왜 잃었는지</h2>
-      <p style={{ color: "#8B95A1", fontSize: 16, margin: "0 0 20px" }}>손실 거래 하나하나에 원인을 정리했어요. 도메인·심각도로 추려 보세요.</p>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 10 }}>
-        {([["all", "전체"], ["cut", "손절실패"], ["entry", "진입오류"]] as const).map(([id, label]) => {
-          const active = filterType === id; const col = id === "all" ? "#0B2E59" : DOMAIN[id as DomainId].color;
-          return <button key={id} onClick={() => { setFilterType(id); setSelTrade(null); }} style={{ cursor: "pointer", fontSize: 13.5, borderRadius: 9, padding: "8px 15px", fontWeight: active ? 600 : 500, background: active ? col : "#F2F4F6", color: active ? "#fff" : "#8B95A1", border: "none" }}>{label}</button>;
-        })}
+      <p style={{ color: "#8B95A1", fontSize: 16, margin: "0 0 18px" }}>손실 거래를 탭으로 하나씩 넘겨 보세요. 분류기가 걸러낸 피쳐와 심리 신호로 설명해요.</p>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 9 }}>
+        <span style={{ flex: "0 0 50px", fontSize: 12, fontWeight: 700, color: "#B0B8C1", paddingTop: 9 }}>유형</span>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+          {([["all", "전체"], ["cut", "손절실패"], ["entry", "진입오류"]] as const).map(([id, label]) => {
+            const act = filterType === id; const col = id === "all" ? "#0B2E59" : DOMAIN[id as DomainId].color;
+            return <button key={id} onClick={() => { setFilterType(id); setSelTrade(0); }} style={{ cursor: "pointer", fontSize: 13.5, borderRadius: 9, padding: "8px 15px", fontWeight: act ? 600 : 500, background: act ? col : "#F2F4F6", color: act ? "#fff" : "#8B95A1", border: "none" }}>{label}</button>;
+          })}
+        </div>
       </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 20 }}>
-        {([["all", "전체 심각도"], ["strong", "강함"], ["moderate", "보통"], ["weak", "약함"]] as const).map(([id, label]) => {
-          const active = filterSev === id;
-          return <button key={id} onClick={() => { setFilterSev(id); setSelTrade(null); }} style={{ cursor: "pointer", fontSize: 13, borderRadius: 9, padding: "7px 13px", fontWeight: 500, background: active ? "#E8EBED" : "transparent", color: active ? "#191F28" : "#8B95A1", border: "1px solid " + (active ? "transparent" : "#E5E8EB") }}>{label}</button>;
-        })}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+        <span style={{ flex: "0 0 50px", fontSize: 12, fontWeight: 700, color: "#B0B8C1", paddingTop: 8 }}>심각도</span>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+          {([["all", "전체 심각도"], ["strong", "강함"], ["moderate", "보통"], ["weak", "약함"]] as const).map(([id, label]) => {
+            const act = filterSev === id;
+            return <button key={id} onClick={() => { setFilterSev(id); setSelTrade(0); }} style={{ cursor: "pointer", fontSize: 13, borderRadius: 9, padding: "7px 13px", fontWeight: 500, background: act ? "#E8EBED" : "transparent", color: act ? "#191F28" : "#8B95A1", border: "1px solid " + (act ? "transparent" : "#E5E8EB") }}>{label}</button>;
+          })}
+        </div>
       </div>
-      <div style={{ fontSize: 13.5, color: "#8B95A1", marginBottom: 14 }}>{filtered.length}건</div>
-      {filtered.length === 0 && <div style={{ textAlign: "center", padding: "50px 20px", color: "#8B95A1", fontSize: 15, background: "#F2F4F6", borderRadius: 14 }}>해당하는 거래가 없어요. 필터를 바꿔보세요.</div>}
-      <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
-        {filtered.map((t, i) => {
-          const m = DOMAIN[t.type]; const sel = selTrade === i;
-          const eW = Math.round((t.eScore ?? 0) * 100), cW = Math.round((t.cScore ?? 0) * 100);
-          return (
-            <div key={t.trade_id} onClick={() => setSelTrade(i)} style={{ cursor: "pointer", background: "#fff", borderTop: "1px solid " + (sel ? m.color : "#E5E8EB"), borderRight: "1px solid " + (sel ? m.color : "#E5E8EB"), borderBottom: "1px solid " + (sel ? m.color : "#E5E8EB"), borderLeft: "3px solid " + m.color, borderRadius: 14, padding: "17px 18px", boxShadow: sel ? "0 0 0 2px " + m.tint : "none" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px 5px 8px", borderRadius: 8, background: m.tint }}>
-                  <DomainIcon type={t.type} size={15} /><span style={{ fontSize: 13.5, fontWeight: 600, color: m.color }}>{t.typeName}</span>
-                </div>
-                <span style={{ fontSize: 11.5, fontWeight: 600, borderRadius: 6, padding: "4px 9px", color: "#8B95A1", background: "#F2F4F6" }}>{SEV_LABEL[t.sev] || t.sev}</span>
-                {t.label && <span style={{ fontSize: 11.5, fontWeight: 600, borderRadius: 6, padding: "4px 9px", color: m.color, background: m.tint }}>{t.label}</span>}
-              </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", margin: "14px 0 2px" }}>
-                <span style={{ fontSize: 17, fontWeight: 700 }}>{t.name || t.code}</span>
-                <span style={{ fontSize: 13.5, color: "#8B95A1" }}>{t.code}</span>
-                <span style={{ fontSize: 13.5, color: "#8B95A1", marginLeft: "auto" }}>진입 {t.date}</span>
-              </div>
-              {(t.eScore != null && t.cScore != null) && (
-                <div style={{ background: "#F8F9FA", borderRadius: 10, padding: "11px 12px", margin: "10px 0 13px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                    <span style={{ fontSize: 12.5, color: "#8B95A1" }}>분류기 라우팅 점수</span>
-                    <span style={{ fontSize: 11.5, fontWeight: 600, borderRadius: 6, padding: "3px 8px", color: "#0B2E59", background: "#EAF0F8" }}>{t.route || "—"} · 신뢰도 {t.conf != null ? Math.round(t.conf * 100) + "%" : "—"}</span>
-                  </div>
-                  <div style={{ display: "flex", height: 8, borderRadius: 5, overflow: "hidden", background: "#E9ECEF" }}>
-                    <div style={{ width: eW + "%", background: "#F0890C" }} /><div style={{ width: cW + "%", background: "#0B2E59" }} />
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 11.5, color: "#8B95A1" }}>
-                    <span>진입오류 {t.eScore?.toFixed(2)}</span><span>손절실패 {t.cScore?.toFixed(2)}</span>
-                  </div>
-                </div>
-              )}
-              <p style={{ fontSize: 15, lineHeight: 1.7, color: "#4E5968", margin: "0 0 13px" }}>{t.desc}</p>
-              {t.signals && (
-                <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>
-                  {Object.entries(t.signals).map(([k, v]) => {
-                    const on = (v ?? 0) > 0.05;
-                    return (
-                      <div key={k} style={{ flex: "1 1 0", textAlign: "center", borderRadius: 9, padding: "9px 4px", background: on ? "#E7ECF4" : "#F2F4F6", border: "1px solid " + (on ? "#0B2E59" : "transparent") }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 600, color: on ? "#0B2E59" : "#B0B8C1" }}>{k}</div>
-                        <div style={{ fontSize: 11, color: "#8B95A1", marginTop: 2 }}>{(v ?? 0).toFixed(2)} <span style={{ color: "#C4CDD5" }}>·w{SIG_W[k]}</span></div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+
+      {filtered.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "50px 20px", color: "#8B95A1", fontSize: 15, background: "#F2F4F6", borderRadius: 14 }}>해당하는 거래가 없어요. 필터를 바꿔보세요.</div>
+      ) : (
+        <>
+          {/* ── 거래별 미니탭 (1탭 = 1거래). 필터 줄과 다른 맥락이므로 구분선으로 분리 ── */}
+          <div style={{ borderTop: "1px solid #ECEEF0", margin: "16px 0 0" }} />
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12, margin: "14px 0 16px" }}>
+            <span style={{ flex: "0 0 50px", fontSize: 12, fontWeight: 700, color: "#B0B8C1", paddingTop: 9 }}>거래 {filtered.length}건</span>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {filtered.map((ft, i) => {
+                const fm = DOMAIN[ft.type]; const on = i === active;
+                return (
+                  <button key={ft.trade_id} onClick={() => setSelTrade(i)} style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: on ? 700 : 500, borderRadius: 10, padding: "8px 13px", background: on ? "#fff" : "#F2F4F6", color: on ? "#191F28" : "#8B95A1", border: "1.5px solid " + (on ? fm.color : "transparent"), boxShadow: on ? "0 1px 4px rgba(0,0,0,.05)" : "none" }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: fm.color, flexShrink: 0 }} />
+                    {ft.name || ft.code}
+                  </button>
+                );
+              })}
             </div>
-          );
-        })}
-      </div>
+          </div>
+
+          {/* ── 선택된 거래 카드 (가로: 왼쪽 차트 / 오른쪽 설명) ── */}
+          {t && (
+          <div style={{ overflow: "hidden", background: "#fff", border: "1px solid #E5E8EB", borderLeft: "3px solid " + m.color, borderRadius: 14 }}>
+            <div style={{ display: "flex", flexWrap: "wrap" }}>
+              {/* 왼쪽: 실거래 차트 + 피쳐 위치 */}
+              <div style={{ flex: "1 1 320px", minWidth: 280, background: "#FBFCFD", borderRight: "1px solid #F2F4F6", padding: "16px 14px 10px" }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 4 }}>
+                  <span style={{ fontSize: 17, fontWeight: 700 }}>{t.name || t.code}</span>
+                  <span style={{ fontSize: 12.5, color: "#8B95A1" }}>{t.code}</span>
+                  {pnlPct != null && <span style={{ marginLeft: "auto", fontSize: 15, fontWeight: 700, color: pnlPct < 0 ? "#E2574C" : "#0B8043" }}>{pnlPct > 0 ? "+" : ""}{pnlPct.toFixed(2)}%</span>}
+                </div>
+                <div style={{ fontSize: 11.5, color: "#8B95A1", marginBottom: 6 }}>진입 {t.date} · 보유구간 실거래</div>
+                {t.chart ? <TradeMiniChart chart={t.chart} color={m.color} tint={m.tint} />
+                  : <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", color: "#B0B8C1", fontSize: 13 }}>차트 데이터 없음</div>}
+              </div>
+
+              {/* 오른쪽: 분류 근거 + 심리 심화 */}
+              <div style={{ flex: "1 1 360px", minWidth: 300, padding: "16px 18px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 11 }}>
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px 5px 8px", borderRadius: 8, background: m.tint }}>
+                    <DomainIcon type={t.type} size={15} /><span style={{ fontSize: 13.5, fontWeight: 600, color: m.color }}>{t.typeName}</span>
+                  </div>
+                  <span style={{ fontSize: 11.5, fontWeight: 600, borderRadius: 6, padding: "4px 9px", color: "#8B95A1", background: "#F2F4F6" }}>{SEV_LABEL[t.sev] || t.sev}</span>
+                  {t.label && <span style={{ fontSize: 11.5, fontWeight: 600, borderRadius: 6, padding: "4px 9px", color: m.color, background: m.tint }}>{t.label}</span>}
+                </div>
+                <p style={{ fontSize: 14.5, lineHeight: 1.7, color: "#4E5968", margin: "0 0 14px" }}>{t.desc}</p>
+
+                {/* 왜 이 분류인가 — 피쳐 근거 */}
+                {t.why?.length > 0 && (
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: m.color, marginBottom: 8 }}>왜 {t.typeName}로 봤나 — 분류기가 걸러낸 신호</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {t.why.map((w, k) => (
+                        <div key={k} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13.5, lineHeight: 1.55, color: w.strong ? "#191F28" : "#4E5968", fontWeight: w.strong ? 600 : 400 }}>
+                          <span style={{ flexShrink: 0, width: 6, height: 6, borderRadius: "50%", marginTop: 6, background: w.strong ? m.color : "#C4CDD5" }} />
+                          <span>{w.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 심리 심화 */}
+                {t.psych && (
+                  <div style={{ background: t.psych.detected ? m.tint : "#F8F9FA", borderRadius: 10, padding: "12px 13px", marginBottom: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: t.psych.evidence.length || t.psych.desc ? 6 : 0 }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: t.psych.detected ? m.color : "#8B95A1" }}>심리 신호 · {t.psych.name}</span>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, borderRadius: 5, padding: "2px 7px", color: "#fff", background: t.psych.detected ? m.color : "#B0B8C1" }}>{t.psych.detected ? "감지됨" : "약함"}</span>
+                    </div>
+                    {t.psych.desc && <p style={{ fontSize: 12.5, lineHeight: 1.6, color: "#8B95A1", margin: "0 0 6px" }}>{t.psych.desc}</p>}
+                    {t.psych.evidence.map((e, k) => (
+                      <p key={k} style={{ fontSize: 13, lineHeight: 1.6, color: "#4E5968", margin: "4px 0 0" }}>· {e}</p>
+                    ))}
+                  </div>
+                )}
+
+                {/* 손절실패 신호 점수 */}
+                {t.signals && (
+                  <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                    {Object.entries(t.signals).map(([k, v]) => {
+                      const on = (v ?? 0) > 0.05;
+                      return (
+                        <div key={k} style={{ flex: "1 1 0", textAlign: "center", borderRadius: 9, padding: "8px 4px", background: on ? "#E7ECF4" : "#F2F4F6", border: "1px solid " + (on ? "#0B2E59" : "transparent") }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 600, color: on ? "#0B2E59" : "#B0B8C1" }}>{k}</div>
+                          <div style={{ fontSize: 11, color: "#8B95A1", marginTop: 2 }}>{(v ?? 0).toFixed(2)} <span style={{ color: "#C4CDD5" }}>·w{SIG_W[k]}</span></div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* 분류기 라우팅 점수 */}
+                {(t.eScore != null && t.cScore != null) && (
+                  <div style={{ background: "#F8F9FA", borderRadius: 10, padding: "10px 12px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 7 }}>
+                      <span style={{ fontSize: 12, color: "#8B95A1" }}>분류기 라우팅 점수</span>
+                      <span style={{ fontSize: 11, fontWeight: 600, borderRadius: 6, padding: "3px 8px", color: "#0B2E59", background: "#EAF0F8" }}>{t.route || "—"} · 신뢰도 {t.conf != null ? Math.round(t.conf * 100) + "%" : "—"}</span>
+                    </div>
+                    <div style={{ display: "flex", height: 8, borderRadius: 5, overflow: "hidden", background: "#E9ECEF" }}>
+                      <div style={{ width: eW + "%", background: "#F0890C" }} /><div style={{ width: cW + "%", background: "#0B2E59" }} />
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 11, color: "#8B95A1" }}>
+                      <span>진입오류 {t.eScore?.toFixed(2)}</span><span>손절실패 {t.cScore?.toFixed(2)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          )}
+        </>
+      )}
+
+      {/* ── 다음 단계: 안 본 다른 도메인 되묻기 → 진단 복귀 / 내 성향 ── */}
+      {asking ? (
+        <div style={{ marginTop: 24, background: "#FFF8F2", border: "1px solid #FBD9BF", borderRadius: 16, padding: "20px 22px" }}>
+          <div style={{ fontSize: 15.5, fontWeight: 700, color: "#191F28", marginBottom: 6 }}>아직 안 본 문제가 있어요</div>
+          <p style={{ fontSize: 14.5, lineHeight: 1.65, color: "#4E5968", margin: "0 0 16px" }}>
+            이번엔 <b style={{ color: DOMAIN[other.id].color }}>{other.name} {other.count}건</b>도 같은 방식으로 분석해 드릴까요? 보고 나서 내 성향으로 넘어가요.
+          </p>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button onClick={onSeeOther} style={{ cursor: "pointer", fontSize: 14.5, fontWeight: 600, borderRadius: 11, padding: "12px 20px", border: "none", background: DOMAIN[other.id].color, color: "#fff" }}>네, {other.name}도 볼게요 →</button>
+            <button onClick={onToProfile} style={{ cursor: "pointer", fontSize: 14.5, fontWeight: 600, borderRadius: 11, padding: "12px 20px", border: "1.5px solid #E5E8EB", background: "#fff", color: "#8B95A1" }}>아니요, 내 성향 볼게요</button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => (shouldAsk ? setAsking(true) : onToProfile())} style={{ cursor: "pointer", width: "100%", marginTop: 24, fontSize: 15.5, fontWeight: 700, borderRadius: 12, padding: "15px", border: "none", background: "#F5500A", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          총평 · 내 성향 보러 가기 →
+        </button>
+      )}
     </div>
   );
 }
 
 // ── ⑤ PROFILE ────────────────────────────────────────────────────────────────
-function ProfileView({ patterns }: { patterns: Pattern[] }) {
+function CompareBar({ user, pop, color }: { user: number; pop: number; color: string }) {
+  // 본인 발생률(채움) + 모집단 평균 위치(세로 마커)를 한 막대에 표시.
+  const max = Math.max(100, user, pop);
+  return (
+    <div style={{ position: "relative", height: 10, borderRadius: 6, background: "#EEF1F4", overflow: "hidden" }}>
+      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: (user / max) * 100 + "%", background: color, borderRadius: 6 }} />
+      <div style={{ position: "absolute", left: (pop / max) * 100 + "%", top: -2, bottom: -2, width: 2, background: "#191F28" }} title="모집단 평균" />
+    </div>
+  );
+}
+
+function ProfileView({ disp, userName }: { disp: Disposition | null; userName: string }) {
+  if (!disp) return <div><Section step="5" label="복기 루프 · 5단계 내 성향 프로파일" /><Loading /></div>;
+  const dm = DOMAIN[disp.dominant.id];
+  // 헤드라인은 첫 콤마 뒤에서만 줄바꿈하고, 그다음은 한 줄로 이어지게.
+  const ci = disp.headline.indexOf(", ");
+  const h1 = ci >= 0 ? disp.headline.slice(0, ci + 1) : disp.headline;
+  const h2 = ci >= 0 ? disp.headline.slice(ci + 2) : "";
+  const psychRows = [
+    { name: "처분효과", sub: "손실을 오래 끄는 심리", v: disp.psych.disposition, color: DOMAIN.cut.color },
+    { name: "리벤지", sub: "직전 손실 만회 충동", v: disp.psych.revenge, color: DOMAIN.entry.color },
+  ];
   return (
     <div>
       <Section step="5" label="복기 루프 · 5단계 내 성향 프로파일" />
-      <h2 style={{ fontSize: "clamp(22px,3.8vw,30px)", fontWeight: 700, color: "#0B2E59", lineHeight: 1.32, margin: "14px 0 12px" }}>당신은 이런 패턴을<br />반복하고 있어요</h2>
-      <p style={{ color: "#8B95A1", fontSize: 16, lineHeight: 1.7, margin: "0 0 14px", maxWidth: 640 }}>다음 거래에서 딱 한 가지만 바꿔보자는 거예요.</p>
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "#0B2E59", borderRadius: 9, padding: "9px 13px", marginBottom: 24 }}>
-        <span style={{ fontSize: 13.5, color: "#EAF0F8", fontWeight: 500 }}>이 패턴들이 곧 실시간 알림(예측기)의 학습 근거가 돼요.</span>
+      <h2 style={{ fontSize: "clamp(22px,3.8vw,30px)", fontWeight: 700, color: "#0B2E59", lineHeight: 1.32, margin: "14px 0 10px" }}>{userName}님의 최종 성향</h2>
+      <p style={{ color: "#4E5968", fontSize: 16, lineHeight: 1.7, margin: "0 0 20px" }}>{h1}{h2 && <br />}{h2}</p>
+
+      {/* 주된 실수 도메인 */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, background: dm.tint, borderRadius: 14, padding: "14px 16px", marginBottom: 22 }}>
+        <div style={{ width: 38, height: 38, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center", background: "#fff" }}><DomainIcon type={disp.dominant.id} size={20} /></div>
+        <div>
+          <div style={{ fontSize: 12.5, color: "#8B95A1" }}>주로 반복되는 실수</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: dm.color }}>{disp.dominant.name} <span style={{ fontSize: 13, color: "#8B95A1", fontWeight: 500 }}>· 손실의 {disp.dominant.pct}%</span></div>
+        </div>
       </div>
-      {patterns.length === 0 && <Loading />}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 13 }}>
-        {patterns.map((p, i) => (
-          <div key={i} style={{ background: "#fff", border: "1px solid #E5E8EB", borderRadius: 14, padding: 18 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
-              <div style={{ width: 34, height: 34, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: p.tint }}><DomainIcon type={p.type} size={18} /></div>
-              <div style={{ fontSize: 12.5, color: p.color, fontWeight: 600 }}>{p.typeName}</div>
+
+      {/* 모집단 대비 유독 잘 걸리는 피쳐 */}
+      <div style={{ fontSize: 16, fontWeight: 700, color: "#191F28", marginBottom: 4 }}>남들보다 유독 잘 걸리는 지점</div>
+      <p style={{ fontSize: 13, color: "#8B95A1", margin: "0 0 14px" }}>10명 평균(│ 검은 선)과 비교한 {userName}님의 발생률입니다.</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 12, marginBottom: 28 }}>
+        {disp.signature.map((s, i) => {
+          const c = DOMAIN[s.domain].color;
+          const over = s.ratio >= 1.15;
+          return (
+            <div key={i} style={{ background: "#fff", border: "1px solid #E5E8EB", borderRadius: 14, padding: "15px 16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
+                <span style={{ width: 9, height: 9, borderRadius: "50%", background: c, flexShrink: 0 }} />
+                <span style={{ fontSize: 14.5, fontWeight: 700 }}>{s.label}</span>
+                {s.reliable && over
+                  ? <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700, color: "#fff", background: c, borderRadius: 6, padding: "3px 8px" }}>평균 ×{s.ratio}배</span>
+                  : over
+                    ? <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 600, color: c, background: DOMAIN[s.domain].tint, borderRadius: 6, padding: "3px 8px" }}>남들에겐 드문 신호</span>
+                    : <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 600, color: "#8B95A1", background: "#F2F4F6", borderRadius: 6, padding: "3px 8px" }}>평균 수준</span>}
+              </div>
+              <CompareBar user={s.user_pct} pop={s.pop_pct} color={c} />
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 7, fontSize: 12, color: "#8B95A1" }}>
+                <span style={{ color: "#191F28", fontWeight: 600 }}>본인 {s.user_pct}%</span>
+                <span>10명 평균 {s.pop_pct}% · {s.count}건</span>
+              </div>
             </div>
-            <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.45, marginBottom: 10 }}>{p.title}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-              <span style={{ fontSize: 18, fontWeight: 700, color: p.color }}>{p.stat}</span>
-              <span style={{ fontSize: 12.5, color: "#8B95A1", background: "#F2F4F6", borderRadius: 5, padding: "3px 8px" }}>{p.tag}</span>
+          );
+        })}
+      </div>
+
+      {/* 심리 신호 vs 평균 */}
+      <div style={{ fontSize: 16, fontWeight: 700, color: "#191F28", marginBottom: 12 }}>심리 신호</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 12, marginBottom: 28 }}>
+        {psychRows.map((r, i) => (
+          <div key={i} style={{ background: "#fff", border: "1px solid #E5E8EB", borderRadius: 14, padding: "15px 16px" }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 7, marginBottom: 10 }}>
+              <span style={{ fontSize: 14.5, fontWeight: 700, color: r.color }}>{r.name}</span>
+              <span style={{ fontSize: 12, color: "#8B95A1" }}>{r.sub}</span>
+              <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 600, color: r.v.user_pct > r.v.pop_pct ? r.color : "#8B95A1" }}>{r.v.user_pct > r.v.pop_pct ? "평균 이상" : "평균 이하"}</span>
             </div>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: p.tint, borderRadius: 10, padding: "12px 13px" }}>
-              <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={p.color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto", marginTop: 2 }}><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
-              <div style={{ fontSize: 14, lineHeight: 1.6, color: "#4E5968" }}>{p.correction}</div>
+            <CompareBar user={r.v.user_pct} pop={r.v.pop_pct} color={r.color} />
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 7, fontSize: 12, color: "#8B95A1" }}>
+              <span style={{ color: "#191F28", fontWeight: 600 }}>본인 {r.v.user_pct}%</span>
+              <span>10명 평균 {r.v.pop_pct}%</span>
             </div>
           </div>
         ))}
+      </div>
+
+      {/* 최종 솔루션 */}
+      {disp.solutions.length > 0 && (
+        <div style={{ background: "#fff", border: "1px solid #E5E8EB", borderRadius: 16, padding: "20px 22px", marginBottom: 18 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#0B2E59", marginBottom: 4 }}>그래서, 이렇게 고쳐봐요</div>
+          <p style={{ fontSize: 13, color: "#8B95A1", margin: "0 0 14px" }}>{userName}님의 성향에 맞춘 최종 솔루션이에요.</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {disp.solutions.map((s, i) => (
+              <div key={i} style={{ display: "flex", gap: 11, alignItems: "flex-start", background: "#0B2E59", borderRadius: 11, padding: "13px 14px" }}>
+                <span style={{ flexShrink: 0, width: 22, height: 22, borderRadius: "50%", background: "#F5500A", color: "#fff", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</span>
+                <span style={{ fontSize: 14.5, lineHeight: 1.6, color: "#EAF0F8" }}>{s}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "#F2F4F6", borderRadius: 9, padding: "9px 13px" }}>
+        <span style={{ fontSize: 13, color: "#4E5968", fontWeight: 500 }}>이 성향이 곧 실시간 알림(예측기)의 학습 근거가 돼요.</span>
       </div>
     </div>
   );

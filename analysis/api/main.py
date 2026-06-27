@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import collections
 import sys
 from functools import lru_cache
 from pathlib import Path
@@ -52,6 +53,17 @@ DOMAIN = {
 _SEV_ORDER = {"strong": 3, "moderate": 2, "weak": 1, None: 0}
 
 
+def _norm_sev(raw: Optional[str]) -> str:
+    """에이전트별로 제각각인 심각도 어휘(none/low/insufficient_data/medium 등)를
+    UI 필터 3단계(강함/보통/약함)로 통일한다. 약한 것·미상은 모두 '약함'."""
+    s = (raw or "").lower()
+    if s in ("strong", "high"):
+        return "strong"
+    if s in ("moderate", "medium"):
+        return "moderate"
+    return "weak"  # weak, low, none, insufficient_data, "" …
+
+
 # ── 공통 헬퍼 ────────────────────────────────────────────────────────────────
 @lru_cache(maxsize=1)
 def _code_to_name() -> dict:
@@ -90,6 +102,25 @@ def _loss_by_trade() -> dict:
             pct = (_json.loads(payload or "{}") or {}).get("realized_pnl_pct")
             if price and qty and pct is not None:
                 out[tid] = abs(float(price) * float(qty) * float(pct) / 100.0)
+        conn.close()
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+@lru_cache(maxsize=1)
+def _trade_charts() -> dict:
+    """trade_id → 거래별 미니차트 페이로드. (UI 전용 DB, analysis.ui.build_trade_charts 산출물)
+
+    분석 아키텍처와 무관한 화면 구현용 캐시. 파일이 없으면 빈 dict(차트 없이 동작).
+    """
+    import json as _json
+    import sqlite3
+    out: dict[str, dict] = {}
+    try:
+        conn = sqlite3.connect("analysis/data/ui_trade_charts.sqlite3")
+        for tid, payload in conn.execute("select trade_id, payload_json from trade_charts"):
+            out[tid] = _json.loads(payload)
         conn.close()
     except Exception:  # noqa: BLE001
         pass
@@ -176,6 +207,136 @@ def _next_round(stats: dict, completed: list[str]) -> Optional[dict]:
 
 
 # ── 매퍼: report item → UI trade ─────────────────────────────────────────────
+_PSYCH_KO = {
+    "disposition": {"name": "처분효과", "desc": "이익은 빨리 실현하고 손실은 오래 끄는 심리"},
+    "revenge": {"name": "리벤지 트레이딩", "desc": "직전 손실을 빨리 만회하려는 충동 매매"},
+    "overtrading": {"name": "과매매", "desc": "근거 없이 매매 빈도가 과도해지는 심리"},
+}
+_STATE_KO = {
+    "downtrend": "하락 추세", "uptrend": "상승 추세", "range": "박스권",
+    "pullback": "눌림목", "breakout": "돌파", "reversal": "반전",
+}
+
+
+def _was(word: str) -> str:
+    """받침 유무에 따라 '이었어요'/'였어요' 선택 (박스권→이었어요, 추세→였어요)."""
+    if not word:
+        return "였어요"
+    ch = word[-1]
+    if "가" <= ch <= "힣":
+        return "이었어요" if (ord(ch) - 0xAC00) % 28 else "였어요"
+    return "였어요"
+
+
+def _fmt_state_evidence(feature: str, value, message: str) -> Optional[str]:
+    """진입 시점 state_classification evidence(피쳐·값·영문메시지)를 한국어 시황 문장으로."""
+    v = value if isinstance(value, (int, float)) else None
+    m = (message or "").lower()
+    if feature == "ma_20_slope":
+        if "positive" in m:
+            return "20일 이동평균선이 상승 흐름이었어요"
+        if "negative" in m:
+            return "20일 이동평균선이 하락 흐름이었어요"
+        return "20일 이동평균선이 거의 횡보 중이었어요"
+    if feature == "ret_20m":
+        if "negative" in m:
+            return "진입 직전 20분 가격이 약세였어요"
+        if "positive" in m:
+            return "진입 직전 20분 반등 흐름이 있었어요"
+        return "진입 직전 20분 가격 변화가 크지 않았어요"
+    if feature == "rsi_14":
+        return f"RSI {v:.0f} — 과열·침체 아닌 중립 구간이었어요" if v is not None else "RSI가 중립 구간이었어요"
+    if feature == "range_position_20m":
+        if v is not None:
+            pct = round(v * 100)
+            return (f"최근 변동범위 상단({pct}%)에서 진입했어요" if v >= 0.66
+                    else f"최근 변동범위 안쪽({pct}%)에서 진입했어요")
+        return "최근 변동범위 안에서 진입했어요"
+    if feature == "entry_vs_high20_ratio":
+        return "최근 20분 고점 부근에서 매수했어요"
+    if feature == "entry_vs_ma20_pct":
+        return f"20일선보다 {abs(v) * 100:.1f}% 아래에서 진입했어요" if v is not None else "20일선 아래에서 진입했어요"
+    if feature in ("ret_3m", "ret_5m"):
+        return "진입 직전 단기(3~5분) 흐름이 약했어요"
+    if feature == "volume_ratio_20m":
+        return f"평소보다 거래량이 {v:.1f}배 많았어요" if v is not None else "평소보다 거래량이 많았어요"
+    return None
+
+
+def _reasons_dto(it: LossReportItem) -> dict:
+    """분류 근거(피쳐 기반) + 심리 심화. it.raw_result(원본 result_json)에서 사람이 읽을 문장으로 가공."""
+    raw = it.raw_result or {}
+    why: list[dict] = []
+
+    if _domain_of(it.agent_id) and _domain_of(it.agent_id)["id"] == "cut":
+        sig = raw.get("signals") or {}
+        dd = sig.get("delay_days"); sp = sig.get("stop_pct"); mae = sig.get("MAE_pct")
+        ret = sig.get("realized_return_pct"); adc = sig.get("avg_down_count") or 0
+        if not sig.get("breached"):
+            # 손절선까지 닿지도 않은 손실 — '손절실패'라 부르기엔 약하다. 정직하게 표기.
+            band = (f"손절선({sp:.1f}%)까지는 닿지 않았어요"
+                    + (f" (최대 {mae:.1f}%)" if mae is not None else ""))
+            why.append({"text": band + " — 손절실패 강도는 약합니다", "strong": False})
+            if ret is not None:
+                why.append({"text": f"다만 {ret:.1f}%로 손실을 확정하고 마감했어요", "strong": False})
+        else:
+            if (sig.get("delay_score") or 0) > 0 and dd:
+                why.append({"text": f"손절 기준을 넘긴 뒤 {dd}영업일 더 들고 있었어요", "strong": (sig.get("delay_score") or 0) >= 0.3})
+            if (sig.get("excess_loss_score") or 0) > 0 and sp is not None and mae is not None:
+                why.append({"text": f"손절선 {sp:.1f}% 대비 최대 {mae:.1f}%까지 손실이 커졌어요", "strong": (sig.get("excess_loss_score") or 0) >= 0.3})
+            if (sig.get("expansion_score") or 0) > 0:
+                why.append({"text": "보유하는 동안 손실폭이 계속 확대됐어요", "strong": (sig.get("expansion_score") or 0) >= 0.3})
+            if adc > 0:
+                why.append({"text": f"손실 중 {adc}회 추가 매수(물타기)했어요", "strong": True})
+            if not why and ret is not None:
+                why.append({"text": f"끊어야 할 지점을 지나 {ret:.1f}%까지 손실을 키웠어요", "strong": False})
+    else:
+        rr = raw.get("risk_score_result") or {}
+        contribs = rr.get("contributions") or []
+        for c in contribs:
+            nm = c.get("label_name_ko")
+            if nm:
+                conf = c.get("confidence")
+                tail = f" (신뢰도 {round(conf*100)}%)" if isinstance(conf, (int, float)) else ""
+                why.append({"text": nm + tail, "strong": (c.get("contribution_to_score") or 0) >= 10})
+        # 뚜렷한 진입오류 기여요인이 없으면(normal_entry) 솔직히 밝히고, 진입 시점 시황으로 보강.
+        if not contribs:
+            why.append({"text": "뚜렷한 진입오류 신호는 약했어요 — 대신 진입 시점 시황을 짚어볼게요", "strong": False})
+        sc = raw.get("state_classification") or {}
+        st = _STATE_KO.get(sc.get("primary_state"))  # 알 수 없는 상태(insufficient_data 등)는 숨김
+        if st:
+            why.append({"text": f"진입 시점 시장 상태는 ‘{st}’{_was(st)}", "strong": False})
+        # state_classification evidence(MA·RSI·위치·거래량 등)를 시황 근거로 풀어 추가
+        prim = sc.get("primary_state")
+        cands = sc.get("candidate_states") or []
+        ev = next((c.get("evidence") or [] for c in cands if c.get("state") == prim), [])
+        if not ev and cands:
+            ev = cands[0].get("evidence") or []
+        seen: set[str] = set()
+        for e in ev:
+            if len(why) >= 4:  # 전체 근거 줄을 4줄로 제한 (너무 길지 않게)
+                break
+            txt = _fmt_state_evidence(e.get("feature"), e.get("value"), e.get("message"))
+            if txt and txt not in seen:
+                seen.add(txt)
+                why.append({"text": txt, "strong": False})
+        if not why:
+            why.append({"text": "분류기가 진입 패턴(타이밍 오류) 쪽으로 판정했어요", "strong": False})
+
+    psych = raw.get("psych") or {}
+    pid = psych.get("pattern")
+    ko = _PSYCH_KO.get(pid)
+    psych_dto = {
+        "name": ko["name"] if ko else (pid or ""),
+        "desc": ko["desc"] if ko else "",
+        "detected": bool(psych.get("detected")),
+        "score": psych.get("score"),
+        "evidence": psych.get("evidence") or [],
+    } if pid else None
+
+    return {"why": why, "psych": psych_dto}
+
+
 def _trade_dto(it: LossReportItem) -> dict:
     dom = _domain_of(it.agent_id) or DOMAIN["entry_error"]
     ev_feats = {e.get("feature"): e.get("value") for e in (it.evidence or []) if isinstance(e, dict)}
@@ -188,7 +349,7 @@ def _trade_dto(it: LossReportItem) -> dict:
         "loss": round(_loss_by_trade().get(it.trade_id, 0.0)),
         "type": dom["id"],                       # 'entry' | 'cut'
         "typeName": dom["name"],
-        "sev": it.severity or "weak",
+        "sev": _norm_sev(it.severity),
         "label": it.label,
         "desc": it.narrative or "",
         "evidence": [e.get("feature") if isinstance(e, dict) else str(e) for e in (it.evidence or [])],
@@ -204,6 +365,10 @@ def _trade_dto(it: LossReportItem) -> dict:
             "지연": ev_feats.get("delay_score"),
             "물타기": ev_feats.get("avg_down_score"),
         } if dom["id"] == "cut" else None,
+        # 거래별 탭 카드용 미니차트(UI 전용 DB). 없으면 null.
+        "chart": _trade_charts().get(it.trade_id),
+        # 분류 근거(피쳐 기반 문장) + 심리 심화
+        **_reasons_dto(it),
     }
 
 
@@ -251,6 +416,165 @@ def _pattern_dto(p: dict) -> dict:
         "tag": dom["psych"],
         "example": p.get("representative_trade", ""),
         "correction": p.get("correction", ""),
+    }
+
+
+# ── ⑤ 내 성향: 모집단(10명) 대비 피쳐 시그니처 + 솔루션 ──────────────────────
+# "이 사람이 다른 사람들보다 유독 잘 걸리는 피쳐"를 뽑아 최종 성향 + 교정안을 만든다.
+_CUT_FEATS_KO = {"delay": "손절을 미루는 습관", "excess": "손절선 넘겨 버티기",
+                 "expansion": "손실 확대 방치", "avgdown": "손실 종목 물타기"}
+_CUT_FEAT_FIELD = {"delay": "delay_score", "excess": "excess_loss_score",
+                   "expansion": "expansion_score", "avgdown": "avg_down_score"}
+_ENTRY_FEATS_KO = {
+    "weak_flow_near_high": "고점 부근 수급 부족 진입",
+    "range_top_chase": "박스권 상단 추격 진입",
+    "gap_up_chase": "신고가권 추격 매수",
+    "downtrend_without_reversal": "반등 없는 하락추세 진입",
+    "unstable_pullback_flow": "불안정한 눌림목 진입",
+}
+_FEAT_SOLUTION = {
+    "delay": "손절선을 숫자로 못 박고, 닿으면 ‘내일’이 아니라 그 자리에서 끊는 규칙을 만드세요.",
+    "excess": "손절선 도달 시 자동 청산되도록 역지정가(스톱) 주문을 미리 걸어두세요.",
+    "expansion": "손실이 커지는 종목은 장중 알림으로 즉시 대응해 방치 시간을 없애세요.",
+    "avgdown": "손실 종목 추가매수는 금지 규칙으로. 평단 낮추기보다 손절을 우선하세요.",
+    "weak_flow_near_high": "고점 부근에선 거래량·수급을 먼저 확인하고, 안 되면 진입을 미루세요.",
+    "range_top_chase": "박스권에선 상단 추격 대신 하단 지지에서만 분할 진입하세요.",
+    "gap_up_chase": "신고가 추격은 손절폭을 좁히거나 눌림을 확인한 뒤 들어가세요.",
+    "downtrend_without_reversal": "하락 추세에선 반등 확인(거래량 동반 양봉 등) 전까지 진입을 보류하세요.",
+    "unstable_pullback_flow": "눌림목은 되돌림이 안정된 신호를 확인한 뒤 진입하세요.",
+}
+
+
+def _user_incidence(rows: list) -> dict:
+    """한 사용자의 [(agent_id, result)] → 피쳐 발생수 + 도메인별 거래수 + 심리 감지수."""
+    fired = collections.Counter()
+    cut_total = entry_total = disp = rev = 0
+    for aid, r in rows:
+        if aid == "stop_loss_failure":
+            cut_total += 1
+            sig = r.get("signals") or {}
+            for key, field in _CUT_FEAT_FIELD.items():
+                if (sig.get(field) or 0) > 0.05:
+                    fired[("cut", key)] += 1
+            ps = r.get("psych") or {}
+            if ps.get("pattern") == "disposition" and ps.get("detected"):
+                disp += 1
+        elif aid == "entry_error":
+            entry_total += 1
+            for cc in (r.get("risk_score_result", {}).get("contributions") or []):
+                lid = cc.get("label_id")
+                if lid in _ENTRY_FEATS_KO:
+                    fired[("entry", lid)] += 1
+            ps = r.get("psych") or {}
+            if ps.get("pattern") == "revenge" and ps.get("detected"):
+                rev += 1
+    return {"fired": fired, "cut_total": cut_total, "entry_total": entry_total,
+            "total": cut_total + entry_total, "disp": disp, "rev": rev}
+
+
+@lru_cache(maxsize=1)
+def _population() -> dict:
+    """user_profile_trade_labels 전체 → 사용자별 발생률 + 모집단(도메인 보유자) 평균."""
+    import json as _json
+    import sqlite3
+    by_user: dict[str, list] = collections.defaultdict(list)
+    try:
+        conn = sqlite3.connect(_PROFILE_DB)
+        for uid, aid, rj in conn.execute(
+            "select user_id, agent_id, result_json from user_profile_trade_labels"
+        ):
+            try:
+                by_user[uid].append((aid, _json.loads(rj or "{}")))
+            except Exception:
+                pass
+        conn.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+    stats = {u: _user_incidence(v) for u, v in by_user.items()}
+    # 피쳐별 사용자 발생률(도메인 상대) + 모집단 평균(해당 도메인 보유자 기준)
+    rates: dict = collections.defaultdict(dict)
+    for u, s in stats.items():
+        for key in _CUT_FEATS_KO:
+            if s["cut_total"] > 0:
+                rates[("cut", key)][u] = s["fired"].get(("cut", key), 0) / s["cut_total"]
+        for lid in _ENTRY_FEATS_KO:
+            if s["entry_total"] > 0:
+                rates[("entry", lid)][u] = s["fired"].get(("entry", lid), 0) / s["entry_total"]
+    pop = {feat: (sum(d.values()) / len(d) if d else 0.0) for feat, d in rates.items()}
+    return {"stats": stats, "rates": rates, "pop": pop}
+
+
+def _feat_ko(feat: tuple) -> str:
+    dom_id, key = feat
+    return _CUT_FEATS_KO.get(key) if dom_id == "cut" else _ENTRY_FEATS_KO.get(key, key)
+
+
+@app.get("/api/disposition/{user_id}")
+def disposition(user_id: str) -> dict:
+    """최종 성향: 주된 실수 도메인 + 모집단 대비 유독 잘 걸리는 피쳐 + 심리 + 솔루션."""
+    pf = _population()
+    s = pf["stats"].get(user_id)
+    if not s or s["total"] == 0:
+        raise HTTPException(status_code=404, detail="no disposition data")
+
+    cut, entry = s["cut_total"], s["entry_total"]
+    dom = "cut" if cut >= entry else "entry"
+
+    # 시그니처: (사용자 발생률 / 모집단 평균) 비율이 높은 = 남보다 유독 잘 걸리는 피쳐
+    sig = []
+    for feat, cnt in s["fired"].items():
+        if cnt == 0:
+            continue
+        ur = pf["rates"].get(feat, {}).get(user_id, 0.0)
+        pr = pf["pop"].get(feat, 0.0)
+        ratio = (ur / pr) if pr > 0 else (2.0 if ur > 0 else 0.0)
+        sig.append({
+            "key": feat[1], "domain": feat[0], "label": _feat_ko(feat),
+            "count": cnt, "user_pct": round(ur * 100), "pop_pct": round(pr * 100),
+            "ratio": round(ratio, 1), "reliable": cnt >= 2,  # 표본 2건 미만이면 'N배' 주장 보류
+            "solution": _FEAT_SOLUTION.get(feat[1], ""),
+        })
+    # 표본 가중 정렬(비율×건수): 1건짜리 고배율이 헤드라인을 지배하지 않게.
+    sig.sort(key=lambda x: (x["ratio"] * x["count"], x["count"]), reverse=True)
+    over = [x for x in sig if x["ratio"] >= 1.15]
+    signature = (over or sig)[:4]
+
+    # 심리: 사용자 감지율 vs 모집단 평균
+    def _rate(num: int, den: int) -> float:
+        return num / den if den else 0.0
+    disp_users = [st for st in pf["stats"].values() if st["cut_total"]]
+    rev_users = [st for st in pf["stats"].values() if st["entry_total"]]
+    pop_disp = sum(_rate(st["disp"], st["cut_total"]) for st in disp_users) / max(len(disp_users), 1)
+    pop_rev = sum(_rate(st["rev"], st["entry_total"]) for st in rev_users) / max(len(rev_users), 1)
+    psych = {
+        "disposition": {"user_pct": round(_rate(s["disp"], cut) * 100), "pop_pct": round(pop_disp * 100)},
+        "revenge": {"user_pct": round(_rate(s["rev"], entry) * 100), "pop_pct": round(pop_rev * 100)},
+    }
+
+    # 헤드라인 + 솔루션
+    name = user_id
+    top = signature[0] if signature else None
+    if top and top["reliable"] and top["ratio"] >= 1.3:
+        headline = (f"{name}님은 전체 손실 {s['total']}건 중 {_domain_name(dom)}가 가장 잦고, "
+                    f"그중에서도 ‘{top['label']}’을 다른 사람보다 {top['ratio']}배 자주 합니다.")
+    elif top:
+        headline = (f"{name}님의 주된 실수는 {_domain_name(dom)}이고, "
+                    f"가장 두드러진 신호는 ‘{top['label']}’입니다.")
+    else:
+        headline = f"{name}님의 주된 실수는 {_domain_name(dom)}입니다."
+    solutions = [x["solution"] for x in signature if x["solution"]][:3]
+
+    return {
+        "user_id": user_id,
+        "total": s["total"],
+        "dominant": {"id": dom, "name": _domain_name(dom),
+                     "pct": round(_rate(cut if dom == "cut" else entry, s["total"]) * 100)},
+        "counts": {"cut": cut, "entry": entry},
+        "headline": headline,
+        "signature": signature,
+        "psych": psych,
+        "solutions": solutions,
     }
 
 
@@ -334,7 +658,7 @@ def dashboard(user_id: str) -> dict:
 @app.get("/api/trades/{user_id}")
 def trades(user_id: str) -> dict:
     summ = builder.build_user_summary(user_id, llm=False)
-    items = sorted(summ.items, key=lambda i: (_SEV_ORDER.get(i.severity, 0), i.score or 0), reverse=True)
+    items = sorted(summ.items, key=lambda i: (_SEV_ORDER.get(_norm_sev(i.severity), 0), i.score or 0), reverse=True)
     return {"user_id": user_id, "count": len(items), "trades": [_trade_dto(i) for i in items]}
 
 
@@ -370,7 +694,7 @@ def interaction_select(user_id: str, choice: str, completed: str = "") -> dict:
 
     focus = sorted(
         [it for it in summ.items if (_domain_of(it.agent_id) or {}).get("id") == sel],
-        key=lambda i: (_SEV_ORDER.get(i.severity, 0), i.score or 0),
+        key=lambda i: (_SEV_ORDER.get(_norm_sev(i.severity), 0), i.score or 0),
         reverse=True,
     )
     stats = interaction["stats"]
