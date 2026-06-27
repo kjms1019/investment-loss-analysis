@@ -67,6 +67,12 @@ def _domain_of(agent_id: str) -> Optional[dict]:
     return DOMAIN.get(agent_id)
 
 
+def _domain_name(dom_id: str) -> str:
+    """도메인 id('entry'|'cut') → 한글 표기."""
+    return {"cut": DOMAIN["stop_loss_failure"]["name"],
+            "entry": DOMAIN["entry_error"]["name"]}.get(dom_id, dom_id)
+
+
 @lru_cache(maxsize=1)
 def _loss_by_trade() -> dict:
     """trade_id → 실현 손실금(원, 절대값). normalized_trades 의 price·qty·pct 로 계산.
@@ -130,6 +136,42 @@ def _interaction_dto(summ: LossReportSummary) -> dict:
         "auto_selected": freq_winner if agree else None,
         "options": [opt("frequency", "자주 반복된 문제", freq_winner),
                     opt("amount", "손실 금액이 컸던 문제", amt_winner)] if not agree else [],
+    }
+
+
+def _resolve_choice(choice: str, interaction: dict) -> Optional[str]:
+    """사용자 선택을 도메인 id('entry'|'cut')로 정규화.
+
+    choice 는 도메인 id 그대로('entry'|'cut')이거나 선택 근거('frequency'|'amount').
+    근거면 interaction 의 해당 winner 로 환원한다. 알 수 없으면 None.
+    """
+    choice = (choice or "").strip().lower()
+    if choice in ("entry", "cut"):
+        return choice
+    if choice in ("frequency", "freq"):
+        return interaction.get("frequency_winner")
+    if choice in ("amount", "amt"):
+        return interaction.get("amount_winner")
+    return None
+
+
+def _next_round(stats: dict, completed: list[str]) -> Optional[dict]:
+    """아직 안 본 도메인이 남아 있으면 다음 라운드 제안, 없으면 None.
+
+    stats: _interaction_dto()['stats'] (도메인별 count/amount).
+    completed: 이미 본 도메인 id 리스트.
+    """
+    nm = {"cut": DOMAIN["stop_loss_failure"]["name"], "entry": DOMAIN["entry_error"]["name"]}
+    remaining = [k for k in ("entry", "cut") if k not in completed and stats.get(k, {}).get("count", 0) > 0]
+    if not remaining:
+        return None
+    nxt = remaining[0]
+    return {
+        "type": nxt,
+        "name": nm[nxt],
+        "count": stats[nxt]["count"],
+        "amount": stats[nxt]["amount"],
+        "prompt": f"{nm[nxt]} 분석도 이어서 확인해볼까요?",
     }
 
 
@@ -241,6 +283,45 @@ def trades(user_id: str) -> dict:
     summ = builder.build_user_summary(user_id, llm=False)
     items = sorted(summ.items, key=lambda i: (_SEV_ORDER.get(i.severity, 0), i.score or 0), reverse=True)
     return {"user_id": user_id, "count": len(items), "trades": [_trade_dto(i) for i in items]}
+
+
+@app.get("/api/interaction/{user_id}/select")
+def interaction_select(user_id: str, choice: str, completed: str = "") -> dict:
+    """사용자가 고른 문제 도메인으로 포커스 + 다음 라운드 제안.
+
+    상호작용 플로우의 '응답 → 다음 라운드' 연결. 분석은 이미 끝나 있으므로
+    (모든 손실거래가 라우팅·저장됨) 선택은 재분석이 아니라 '관점 포커스'다.
+
+    query:
+      choice    = 'entry' | 'cut' | 'frequency' | 'amount'
+      completed = 이미 본 도메인 id CSV (멀티라운드 추적, 예: "entry")
+    """
+    summ = builder.build_user_summary(user_id, llm=False)
+    if summ.total_loss_trades == 0:
+        raise HTTPException(404, f"'{user_id}' 분석 결과 없음")
+
+    interaction = _interaction_dto(summ)
+    sel = _resolve_choice(choice, interaction)
+    if sel is None:
+        raise HTTPException(400, f"choice 는 entry|cut|frequency|amount 중 하나여야 합니다: {choice!r}")
+
+    done = [c for c in (completed.split(",") if completed else []) if c in ("entry", "cut")]
+    if sel not in done:
+        done.append(sel)
+
+    focus = sorted(
+        [it for it in summ.items if (_domain_of(it.agent_id) or {}).get("id") == sel],
+        key=lambda i: (_SEV_ORDER.get(i.severity, 0), i.score or 0),
+        reverse=True,
+    )
+    stats = interaction["stats"]
+    return {
+        "user_id": user_id,
+        "selected": {"type": sel, "name": _domain_name(sel), **stats.get(sel, {})},
+        "trades": [_trade_dto(i) for i in focus],
+        "completed": done,
+        "next_round": _next_round(stats, done),
+    }
 
 
 @app.get("/api/profile/{user_id}")
