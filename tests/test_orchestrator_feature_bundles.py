@@ -1,4 +1,4 @@
-﻿import csv
+import csv
 import json
 import sqlite3
 
@@ -22,6 +22,8 @@ def test_run_pipeline_stores_initial_feature_bundles_and_reuses_them(tmp_path):
         classifier_features_by_trade_id={"005930@2026-01-02T09:00:00": features},
     )
 
+    # 초기 분석 파이프라인은 피처 번들 계산/저장까지만 검증한다.
+    # 사용자 선택/focus(사후)는 test_orchestrator_interaction.py 가 담당.
     assert result.normalized_count == 1
     assert result.agent_results
     learned = result.agent_results[0].result["learned_classifier"]

@@ -1,4 +1,4 @@
-﻿"""User interaction state for the top-level orchestrator.
+"""User interaction state for the top-level orchestrator.
 
 The interaction layer runs after per-trade routing. It summarizes routed loss
 trades by problem domain, then decides whether the web UI should ask the user

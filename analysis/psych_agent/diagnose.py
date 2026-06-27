@@ -83,6 +83,9 @@ def _template_diagnose(findings: list[TypeFinding], config: Config) -> dict:
 def _llm_diagnose(findings: list[TypeFinding], config: Config) -> dict | None:
     if not config.use_llm:
         return None
+    # 검증/오프라인 강제 차단 스위치 (analysis.llm 과 동일 규약). 키가 있어도 토큰 0.
+    if os.environ.get("MIRAE_DISABLE_LLM", "").strip().lower() in ("1", "true", "yes", "on"):
+        return None
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return None

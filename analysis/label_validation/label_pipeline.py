@@ -1,4 +1,4 @@
-﻿"""진입오류/손절실패 분류기 — 공유 코어.
+"""진입오류/손절실패 분류기 — 공유 코어.
 
 이 모듈은 단계 스크립트(step1~3b)가 함께 쓰는 빌딩블록을 모은다:
   - 결과신호(라벨용)  : loss_early_ratio, trough_time_frac, post_breach_run

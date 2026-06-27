@@ -1,4 +1,4 @@
-﻿"""1분봉(analysis/data/min1) 공용 조회 유틸.
+"""1분봉(analysis/data/min1) 공용 조회 유틸.
 
 holding_market_min1.py(보유종목 실시간 시세)와 데모 백필 어댑터가
 종목명→코드 매핑, parquet 로딩, 특정 시각 인덱스 조회를 공유한다.
@@ -12,9 +12,8 @@ import numpy as np
 import pandas as pd
 
 # 데이터 루트 단일 소스(MIRAE_DATA_ROOT). DATA_ROOT 는 binsu 코드 호환용 별칭.
-from analysis.common.paths import CODES_CSV, DATA_DIR, MIN1_DIR
-
-DATA_ROOT = DATA_DIR
+from analysis.common.paths import CODES_CSV, MIN1_DIR
+from analysis.common.paths import DATA_DIR as DATA_ROOT
 
 _min1_cache: dict[str, Optional[pd.DataFrame]] = {}
 _min1_ohlcv_cache: dict[str, Optional[pd.DataFrame]] = {}

@@ -43,9 +43,18 @@ def _client():
         return None
 
 
+def _llm_disabled() -> bool:
+    """검증/오프라인용 강제 차단 스위치. 키가 있어도 토큰을 안 쓰게 한다.
+
+    MIRAE_DISABLE_LLM=1|true|yes|on 이면 모든 LLM 생성이 fallback 으로 떨어진다.
+    (키가 없을 때 자동 fallback 과 별개로, '키는 있지만 일부러 안 부르는' 검증용.)
+    """
+    return os.getenv("MIRAE_DISABLE_LLM", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def available() -> bool:
-    """LLM 호출 가능(키+패키지) 여부."""
-    return _client() is not None
+    """LLM 호출 가능(키+패키지) 여부. 차단 스위치가 켜지면 False."""
+    return not _llm_disabled() and _client() is not None
 
 
 def strip_code_fence(text: str) -> str:
@@ -75,7 +84,9 @@ def generate(
     temperature: float = 0.3,
     fallback: str = "",
 ) -> str:
-    """Claude로 텍스트 생성. 불가/실패 시 fallback 반환."""
+    """Claude로 텍스트 생성. 불가/실패/차단 시 fallback 반환."""
+    if _llm_disabled():
+        return fallback
     client = _client()
     if client is None:
         return fallback

@@ -1,4 +1,4 @@
-﻿"""SQLite storage for raw inputs, normalized trades, runs, and agent results."""
+"""SQLite storage for raw inputs, normalized trades, runs, and agent results."""
 
 from __future__ import annotations
 

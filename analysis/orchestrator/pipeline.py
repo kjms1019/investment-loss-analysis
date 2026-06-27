@@ -1,4 +1,4 @@
-﻿"""총괄 오케스트레이션 파이프라인.
+"""총괄 오케스트레이션 파이프라인.
 
 흐름:
   CSV → RawTrade → TradeCycle (사이클 묶기)
@@ -187,6 +187,7 @@ def run_pipeline(
         storage.insert_feature_bundles(run_id, feature_bundles)
 
         # 5. 사이클별 라우팅 → 결과 채택
+        #    (normalized_trades/feature_bundles 저장은 위 4단계에서 일괄 처리)
         for cycle in loss_cycles:
             trade_id = cycle.trade_id
 
@@ -283,6 +284,9 @@ def run_pipeline(
     finally:
         storage.close()
 
+    # 초기 분석 파이프라인은 '질문 상태'까지만 만든다. 사용자 선택/focus는
+    # 사후(post-hoc)로 interaction.py(build_interaction_state(selected_agent_id=...))
+    # 와 API 레이어가 처리한다 — 초기 분석과 상호작용 선택을 섞지 않는다.
     interaction_state = build_interaction_state(agent_results, loss_cycles).to_dict()
     # 총괄 대화 문장(LLM). 키 없으면 템플릿 prompt_body 그대로 폴백.
     from .interaction_llm import llm_interaction_prompt
