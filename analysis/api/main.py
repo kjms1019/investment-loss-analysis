@@ -254,6 +254,59 @@ def _pattern_dto(p: dict) -> dict:
     }
 
 
+# ── 전체 거래(이익+손실) 차트용 ─────────────────────────────────────────────
+@lru_cache(maxsize=1)
+def _fixture_trades_by_user() -> dict:
+    """데모 픽스처(종결거래 시트) → {user_id: [거래…]}. 사용자당 10거래(이익+손실)."""
+    import pandas as pd
+    out: dict[str, list] = {}
+    try:
+        df = pd.ExcelFile(_FIXTURE).parse("종결거래")
+        for _, r in df.iterrows():
+            out.setdefault(str(r["사용자명"]), []).append({
+                "name": str(r["종목명"]),
+                "buy": pd.to_datetime(r["매수일시"]).to_pydatetime(),
+                "sell": pd.to_datetime(r["매도일시"]).to_pydatetime(),
+                "qty": float(r["수량"]),
+            })
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def _all_trades_dto(user_id: str) -> dict:
+    """사용자의 전체 거래 10건을 min1 시세로 pnl 계산하고, 손실엔 라우팅 도메인을 붙인다.
+
+    type: 'entry'|'cut' = 손실선별·라우팅된 '본인 탓' 손실, None = 이익·비선별 거래.
+    """
+    from analysis.common.min1_lookup import load_name_to_code, load_min1, price_at
+
+    rows = _fixture_trades_by_user().get(user_id, [])
+    n2c = load_name_to_code()
+
+    # (종목코드, 매수시각[:16]) → 도메인 id. 리포트의 손실거래에만 존재.
+    summ = builder.build_user_summary(user_id, llm=False)
+    dom_by_key: dict = {}
+    for it in summ.items:
+        dom = _domain_of(it.agent_id)
+        if dom:
+            dom_by_key[(it.code, (it.executed_at or "")[:16])] = dom["id"]
+
+    trades = []
+    for r in rows:
+        code = n2c.get(r["name"])
+        m = load_min1(code)
+        ep = price_at(m, r["buy"]) if m is not None else None
+        xp = price_at(m, r["sell"]) if m is not None else None
+        if ep is None or xp is None:
+            continue
+        pnl = round((xp - ep) * r["qty"])
+        typ = dom_by_key.get((code, r["buy"].isoformat()[:16]))
+        trades.append({"code": code, "name": r["name"],
+                       "date": r["buy"].isoformat()[:10], "pnl": pnl, "type": typ})
+    return {"user_id": user_id, "count": len(trades), "trades": trades}
+
+
 # ── 엔드포인트 ───────────────────────────────────────────────────────────────
 @app.get("/api/health")
 def health() -> dict:
@@ -283,6 +336,12 @@ def trades(user_id: str) -> dict:
     summ = builder.build_user_summary(user_id, llm=False)
     items = sorted(summ.items, key=lambda i: (_SEV_ORDER.get(i.severity, 0), i.score or 0), reverse=True)
     return {"user_id": user_id, "count": len(items), "trades": [_trade_dto(i) for i in items]}
+
+
+@app.get("/api/all-trades/{user_id}")
+def all_trades(user_id: str) -> dict:
+    """분석 차트용 — 이익 포함 전체 거래(사용자당 10건). 손실엔 라우팅 도메인 부착."""
+    return _all_trades_dto(user_id)
 
 
 @app.get("/api/interaction/{user_id}/select")

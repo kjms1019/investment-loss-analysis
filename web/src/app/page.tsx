@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import {
-  api, type Alert, type Dashboard, type Pattern, type Trade, type UserItem, type DomainId,
+  api, type Alert, type AllTrade, type Dashboard, type Pattern, type Trade, type UserItem, type DomainId,
 } from "@/lib/api";
 import { DOMAIN, SEV_LABEL, DomainIcon, Logo, Section, LossBars } from "@/components/why/ui";
 
@@ -24,6 +24,7 @@ export default function Home() {
   const [user, setUser] = useState<string>("");
   const [dash, setDash] = useState<Dashboard | null>(null);
   const [trades, setTrades] = useState<Trade[]>([]);
+  const [allTrades, setAllTrades] = useState<AllTrade[]>([]);
   const [patterns, setPatterns] = useState<Pattern[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [err, setErr] = useState<string>("");
@@ -31,15 +32,28 @@ export default function Home() {
   const [filterType, setFilterType] = useState<DomainId | "all">("all");
   const [filterSev, setFilterSev] = useState<string>("all");
   const [consentAgreed, setConsentAgreed] = useState(false);
+  const [authed, setAuthed] = useState(false);
+  const [consentDone, setConsentDone] = useState(false);
+  const authedRef = useRef(authed);
+  const consentRef = useRef(consentDone);
+  authedRef.current = authed;
+  consentRef.current = consentDone;
   const [progressStep, setProgressStep] = useState(0);
-  const [analyzeDone, setAnalyzeDone] = useState(false);
+  const [showResult, setShowResult] = useState(false);
+  const analyzedRef = useRef(false); // 4단계 분석을 한 번이라도 끝냈는지 (재진입 시 재시작 방지)
+  const [dxDomain, setDxDomain] = useState<DomainId | null>(null); // 분석 완료 화면에서 호출한 진단 도메인
   const [selTrade, setSelTrade] = useState<number | null>(null);
 
   // 해시 라우팅
   useEffect(() => {
     const sync = () => {
-      const id = (window.location.hash || "").replace(/^#\/?/, "") as Screen;
-      setScreen(ROUTES.includes(id) ? id : "login");
+      const raw = (window.location.hash || "").replace(/^#\/?/, "");
+      let id = (ROUTES.includes(raw as Screen) ? raw : "login") as Screen;
+      // 로그인 → 약관 동의를 직접 거치지 않으면 이후 화면으로 못 넘어간다(새로고침·URL 직접입력 포함)
+      if (id !== "login" && !authedRef.current) id = "login";
+      else if (id !== "login" && id !== "consent" && !consentRef.current) id = "consent";
+      if (id !== raw) { window.location.hash = "#/" + id; return; }
+      setScreen(id);
     };
     window.addEventListener("hashchange", sync);
     sync();
@@ -58,18 +72,21 @@ export default function Home() {
     setErr("");
     api.dashboard(u).then(setDash).catch((e) => { setDash(null); setErr(String(e)); });
     api.trades(u).then((d) => setTrades(d.trades)).catch(() => setTrades([]));
+    api.allTrades(u).then((d) => setAllTrades(d.trades)).catch(() => setAllTrades([]));
     api.profile(u).then((d) => setPatterns(d.patterns)).catch(() => setPatterns([]));
     api.alerts(u).then((d) => setAlerts(d.alerts)).catch(() => setAlerts([]));
   }, []);
   useEffect(() => { loadUser(user); }, [user, loadUser]);
 
-  // 분석 진행 애니메이션
+  // 분석 진행 애니메이션 — 4단계까지만 자동, 완료 화면으로는 버튼으로 수동 전환.
+  // analyzedRef 로 한 번 끝낸 분석은 화면 재진입 시 다시 돌리지 않는다.
   useEffect(() => {
     if (screen !== "analyze") return;
-    setProgressStep(0); setAnalyzeDone(false);
+    if (analyzedRef.current) return;
+    setProgressStep(0); setShowResult(false);
     const STEP_MS = 1500; // 사람이 단계 문구를 읽을 시간 확보
     const ts = [1, 2, 3].map((n) => setTimeout(() => setProgressStep(n), STEP_MS * n));
-    ts.push(setTimeout(() => { setProgressStep(4); setAnalyzeDone(true); }, STEP_MS * 4));
+    ts.push(setTimeout(() => { setProgressStep(4); analyzedRef.current = true; }, STEP_MS * 4));
     return () => ts.forEach(clearTimeout);
   }, [screen]);
 
@@ -108,11 +125,11 @@ export default function Home() {
           백엔드 연결 오류: {err} — <b>uvicorn analysis.api.main:app --port 8000</b> 실행 중인지 확인하세요.
         </div>}
 
-        {screen === "login" && <Login onLogin={() => go("consent")} onDemo={() => { if (users[0]) setUser(users[0].id); go("consent"); }} />}
-        {screen === "consent" && <Consent agreed={consentAgreed} toggle={() => setConsentAgreed((v) => !v)} onBack={() => go("login")} onStart={() => go("upload")} />}
-        {screen === "upload" && <Upload users={users} user={user} setUser={setUser} onStart={() => go("analyze")} />}
-        {screen === "analyze" && <Analyze step={progressStep} done={analyzeDone} trades={trades} onGo={() => go("dashboard")} />}
-        {screen === "dashboard" && <DashboardView dash={dash} trades={trades} onCard={(t) => { setFilterType(t); setFilterSev("all"); go("trades"); }} />}
+        {screen === "login" && <Login onLogin={() => { setAuthed(true); go("consent"); }} onDemo={() => { if (users[0]) setUser(users[0].id); setAuthed(true); go("consent"); }} />}
+        {screen === "consent" && <Consent agreed={consentAgreed} toggle={() => setConsentAgreed((v) => !v)} onBack={() => go("login")} onStart={() => { setConsentDone(true); go("upload"); }} />}
+        {screen === "upload" && <Upload users={users} user={user} setUser={setUser} onStart={() => { analyzedRef.current = false; setProgressStep(0); setShowResult(false); go("analyze"); }} />}
+        {screen === "analyze" && <Analyze step={progressStep} done={showResult} trades={trades} all={allTrades} onSeeResult={() => setShowResult(true)} onGo={(d) => { setDxDomain(d); go("dashboard"); }} />}
+        {screen === "dashboard" && <DashboardView dash={dash} trades={trades} focus={dxDomain} onCard={(t) => { setFilterType(t); setFilterSev("all"); go("trades"); }} />}
         {screen === "trades" && <TradesView trades={trades} filterType={filterType} setFilterType={setFilterType} filterSev={filterSev} setFilterSev={setFilterSev} selTrade={selTrade} setSelTrade={setSelTrade} />}
         {screen === "profile" && <ProfileView patterns={patterns} />}
         {screen === "alerts" && <AlertsView alerts={alerts} />}
@@ -132,16 +149,19 @@ function NavBtn({ active, num, label, onClick }: { active: boolean; num: string;
 
 // ── LOGIN ────────────────────────────────────────────────────────────────────
 function Login({ onLogin, onDemo }: { onLogin: () => void; onDemo: () => void }) {
+  const [phone, setPhone] = useState("");
+  const [pw, setPw] = useState("");
+  const ready = phone.trim().length > 0 && pw.length > 0;
   return (
     <div style={{ maxWidth: 400, margin: "0 auto", padding: "48px 2px 40px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 40 }}><Logo size={34} /><div style={{ fontWeight: 700, fontSize: 18 }}>왜 잃었지?</div></div>
       <h1 style={{ fontSize: 26, fontWeight: 700, color: "#0B2E59", lineHeight: 1.34, margin: "0 0 10px" }}>내 거래 복기를<br />이어서 확인해 볼까요?</h1>
       <p style={{ color: "#8B95A1", fontSize: 16, lineHeight: 1.6, margin: "0 0 32px" }}>로그인하면 지난 진단 결과와 실시간 알림을 그대로 이어볼 수 있어요.</p>
       <label style={lbl}>휴대폰 번호</label>
-      <input placeholder="010-0000-0000" style={inp} />
+      <input placeholder="010-0000-0000" value={phone} onChange={(e) => setPhone(e.target.value)} style={inp} />
       <label style={{ ...lbl, marginTop: 16 }}>비밀번호</label>
-      <input type="password" placeholder="비밀번호 입력" style={inp} />
-      <button onClick={onLogin} style={{ ...primaryBtn, marginTop: 24 }}>로그인</button>
+      <input type="password" placeholder="비밀번호 입력" value={pw} onChange={(e) => setPw(e.target.value)} style={inp} />
+      <button onClick={() => ready && onLogin()} disabled={!ready} style={{ ...primaryBtn, marginTop: 24, background: ready ? "#F5500A" : "#E5E8EB", color: ready ? "#fff" : "#B0B8C1", cursor: ready ? "pointer" : "default" }}>로그인</button>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginTop: 18, fontSize: 14.5, color: "#8B95A1" }}>
         <span style={{ cursor: "pointer" }}>회원가입</span><span style={{ color: "#E5E8EB" }}>|</span><span style={{ cursor: "pointer" }}>비밀번호 찾기</span>
       </div>
@@ -179,8 +199,7 @@ function Consent({ agreed, toggle, onBack, onStart }: { agreed: boolean; toggle:
         </div>
         <span style={{ fontSize: 16, fontWeight: 600 }}>필수 동의 항목을 모두 확인하고 동의합니다.</span>
       </div>
-      <button onClick={() => agreed && onStart()} style={{ width: "100%", border: "none", borderRadius: 14, padding: 16, fontSize: 16, fontWeight: 600, cursor: agreed ? "pointer" : "default", background: agreed ? "#F5500A" : "#E5E8EB", color: agreed ? "#fff" : "#B0B8C1" }}>동의하고 시작하기</button>
-      <button onClick={onStart} style={{ width: "100%", background: "none", border: "none", color: "#8B95A1", fontSize: 15.5, fontWeight: 500, padding: 16, cursor: "pointer", marginTop: 4 }}>다음에 하기</button>
+      <button onClick={() => agreed && onStart()} disabled={!agreed} style={{ width: "100%", border: "none", borderRadius: 14, padding: 16, fontSize: 16, fontWeight: 600, cursor: agreed ? "pointer" : "default", background: agreed ? "#F5500A" : "#E5E8EB", color: agreed ? "#fff" : "#B0B8C1" }}>동의하고 시작하기</button>
     </div>
   );
 }
@@ -230,23 +249,31 @@ const PIPELINE = [
   { label: "2-way 라우팅 (진입오류·손절실패)", desc: "각 손실을 두 도메인으로 나누고, 심리 신호를 붙이는 중…" },
   { label: "거래별 설명 생성", desc: "거래마다 왜 잃었는지 한 단락씩 정리하는 중…" },
 ];
-function Analyze({ step, done, trades, onGo }: {
-  step: number; done: boolean; trades: Trade[]; onGo: () => void;
+function Analyze({ step, done, trades, all, onSeeResult, onGo }: {
+  step: number; done: boolean; trades: Trade[]; all: AllTrade[]; onSeeResult: () => void; onGo: (d: DomainId) => void;
 }) {
+  const stepsDone = step >= PIPELINE.length; // 4단계 모두 완료
   // 선택은 도메인이 아니라 '카드(축)' 단위 — 두 카드가 같은 도메인일 수 있어서.
   const [pick, setPick] = useState<"freq" | "amount" | null>(null);
-  useEffect(() => { if (!done) setPick(null); }, [done]);
+  const [calling, setCalling] = useState(false); // 선택 후 '분석 에이전트 호출' 카드 표시
+  useEffect(() => { if (!done) { setPick(null); setCalling(false); } }, [done]);
 
   // 전체 거래 차트 — 단계가 진행될수록 '색인'이 점진적으로 들어간다.
-  //  step≤1(파싱): 전체 거래 무색  → step2(손실 선별): 손실만 진하게  → step≥3(라우팅): 도메인 색.
+  //  step≤1(파싱): 전체 거래 무색  → step2(손실 선별): 본인 탓 손실만 진하게  → step≥3(라우팅): 도메인 색.
+  // all = 이익 포함 전체 거래(백엔드 /api/all-trades). type=null 이면 이익·비선별 거래(항상 회색).
+  // 이익·손실 높이는 각 방향 최대값으로 따로 정규화 → 큰 이익에 손실이 묻히지 않게.
   const stage = step <= 1 ? "all" : step === 2 ? "loss" : "routed";
-  const chartBars = trades.map((t) => {
-    const v = -(t.loss ?? t.score ?? 1);
-    if (stage === "all") return { v, color: "#C4CDD5", dim: true };
-    if (stage === "loss") return { v, color: "#9FB1CC", dim: false };
-    return { v, color: DOMAIN[t.type].color, dim: false };
+  const lossCount = all.filter((t) => t.type != null).length;
+  const maxPos = Math.max(1, ...all.filter((t) => t.pnl > 0).map((t) => t.pnl));
+  const maxNeg = Math.max(1, ...all.filter((t) => t.pnl < 0).map((t) => -t.pnl));
+  const chartBars = all.map((t) => {
+    const v = t.pnl >= 0 ? t.pnl / maxPos : -(-t.pnl / maxNeg); // 이익 위(+), 손실 아래(-)
+    if (stage === "all") return { v, color: "#C4CDD5", dim: true };       // 처음엔 전부 회색
+    if (!t.type) return { v, color: "#ECEEF0", dim: true };               // 이익·비선별 → 끝까지 회색
+    if (stage === "loss") return { v, color: "#9FB1CC", dim: false };     // 선별된 손실만 색
+    return { v, color: DOMAIN[t.type].color, dim: false };                // 라우팅 도메인 색
   });
-  const stageNote = stage === "all" ? "전체 거래를 불러왔어요" : stage === "loss" ? "‘당신 탓’ 손실만 골라내는 중…" : "진입오류·손절실패로 분류하는 중…";
+  const stageNote = stage === "all" ? "전체 거래를 불러왔어요" : stage === "loss" ? `‘당신 탓’ 손실 ${lossCount}건을 골라내는 중…` : "진입오류·손절실패로 분류하는 중…";
   const chart = chartBars.length > 0 ? (
     <div style={{ background: "#F8F9FA", border: "1px solid #F2F4F6", borderRadius: 16, padding: "18px 18px 16px", marginBottom: 22 }}>
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
@@ -255,7 +282,7 @@ function Analyze({ step, done, trades, onGo }: {
           <Legend color="#ECEEF0" label="전체(이익)" /><Legend color={DOMAIN.entry.color} label="진입오류" /><Legend color={DOMAIN.cut.color} label="손절실패" />
         </div>
       </div>
-      <LossBars values={chartBars} height={150} />
+      <LossBars values={chartBars} height={100} />
     </div>
   ) : null;
 
@@ -284,6 +311,10 @@ function Analyze({ step, done, trades, onGo }: {
             );
           })}
         </div>
+        <button onClick={() => stepsDone && onSeeResult()} disabled={!stepsDone}
+          style={{ ...primaryBtn, marginTop: 22, background: stepsDone ? "#F5500A" : "#E5E8EB", color: stepsDone ? "#fff" : "#B0B8C1", cursor: stepsDone ? "pointer" : "default" }}>
+          {stepsDone ? "분석 결과 보기 →" : "분석 중이에요…"}
+        </button>
       </div>
     );
   }
@@ -320,13 +351,13 @@ function Analyze({ step, done, trades, onGo }: {
               </div>
               <div style={{ display: "flex", gap: 16, marginTop: 14 }}>
                 <div>
-                  <div style={{ fontSize: 12, color: o.primary === "빈도" ? m.color : "#8B95A1", marginBottom: 3, fontWeight: o.primary === "빈도" ? 600 : 400 }}>빈도</div>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: "#191F28" }}>{st.count}<span style={{ fontSize: 12.5, color: "#8B95A1", fontWeight: 500, marginLeft: 2 }}>건</span></div>
+                  <div style={{ fontSize: 12, color: o.primary === "빈도" ? m.color : "#B0B8C1", marginBottom: 3, fontWeight: o.primary === "빈도" ? 600 : 400 }}>빈도</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: o.primary === "빈도" ? m.color : "#B0B8C1" }}>{st.count}<span style={{ fontSize: 12.5, color: o.primary === "빈도" ? m.color : "#B0B8C1", fontWeight: 500, marginLeft: 2 }}>건</span></div>
                 </div>
                 <div style={{ width: 1, background: "#E5E8EB" }} />
                 <div>
-                  <div style={{ fontSize: 12, color: o.primary === "총손실금" ? m.color : "#8B95A1", marginBottom: 3, fontWeight: o.primary === "총손실금" ? 600 : 400 }}>총 손실금</div>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: m.color }}>{won(st.amount)}</div>
+                  <div style={{ fontSize: 12, color: o.primary === "총손실금" ? m.color : "#B0B8C1", marginBottom: 3, fontWeight: o.primary === "총손실금" ? 600 : 400 }}>총 손실금</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: o.primary === "총손실금" ? m.color : "#B0B8C1" }}>{won(st.amount)}</div>
                 </div>
               </div>
             </button>
@@ -334,10 +365,24 @@ function Analyze({ step, done, trades, onGo }: {
         })}
       </div>
 
-      <button onClick={() => selType && onGo()} disabled={!selType}
-        style={{ ...primaryBtn, marginTop: 22, background: selType ? "#F5500A" : "#E5E8EB", color: selType ? "#fff" : "#B0B8C1", cursor: selType ? "pointer" : "default" }}>
+      <button onClick={() => { if (selType) { const d = selType; setCalling(true); setTimeout(() => onGo(d), 1900); } }} disabled={!selType || calling}
+        style={{ ...primaryBtn, marginTop: 22, background: selType ? "#F5500A" : "#E5E8EB", color: selType ? "#fff" : "#B0B8C1", cursor: selType && !calling ? "pointer" : "default" }}>
         {selType ? `‘${DOMAIN[selType].name}’ 진단 결과 보기 →` : "둘 중 하나를 선택해 주세요"}
       </button>
+
+      {calling && selType && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(11,46,89,.45)", backdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 20, padding: "34px 30px", width: "min(420px,100%)", textAlign: "center", boxShadow: "0 20px 60px rgba(11,46,89,.28)" }}>
+            <div style={{ width: 48, height: 48, margin: "0 auto 20px", borderRadius: "50%", border: "3px solid #E5E8EB", borderTopColor: DOMAIN[selType].color, animation: "wlspin .8s linear infinite" }} />
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: DOMAIN[selType].tint }}><DomainIcon type={selType} size={19} /></div>
+              <span style={{ fontSize: 18, fontWeight: 700, color: DOMAIN[selType].color }}>{DOMAIN[selType].name}</span>
+            </div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: "#191F28" }}>분석 에이전트를 호출합니다</div>
+            <div style={{ fontSize: 13.5, color: "#8B95A1", marginTop: 8 }}>선택한 문제를 깊게 진단하고 있어요…</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -351,63 +396,67 @@ function Legend({ color, label }: { color: string; label: string }) {
 }
 
 // ── ③ DASHBOARD ──────────────────────────────────────────────────────────────
-function DashboardView({ dash, trades, onCard }: { dash: Dashboard | null; trades: Trade[]; onCard: (t: DomainId) => void }) {
+// 선택한 도메인별 '문제 양상 + 원인' 설명 — 그래프만으로 안 읽히는 부분을 말로 풀어준다.
+const DX_TEXT: Record<DomainId, { pattern: string; cause: string }> = {
+  cut: {
+    pattern: "끊었어야 할 지점을 지나치고 버티다 손실을 키운 거래가 반복됐어요.",
+    cause: "손실을 확정하는 고통을 피하려 ‘곧 회복되겠지’ 하며 미루는 처분효과가 작동했어요. 손절선을 정해두지 않았거나, 정해두고도 지키지 못한 경우가 많아요.",
+  },
+  entry: {
+    pattern: "근거가 무르익기 전에 들어가, 진입 시점부터 불리했던 거래가 반복됐어요.",
+    cause: "직전 손실을 빨리 만회하려는 리벤지 심리나 놓칠라(FOMO)가 작동했어요. 매수 전 점검 없이 충동적으로 들어간 경우가 많아요.",
+  },
+};
+function DashboardView({ dash, trades, focus, onCard }: { dash: Dashboard | null; trades: Trade[]; focus: DomainId | null; onCard: (t: DomainId) => void }) {
   if (!dash) return <Loading />;
-  const bars = trades.map((t) => ({ v: t.score ?? 1, color: DOMAIN[t.type].color }));
+  const fd: DomainId = focus ?? dash.dominant.id; // 호출한 진단 도메인 (없으면 1순위)
+  const m = DOMAIN[fd];
+  const od: DomainId = fd === "cut" ? "entry" : "cut";
+  const focusTrades = trades.filter((t) => t.type === fd); // 차트는 선택 도메인만
+  const bars = focusTrades.map((t) => ({ v: t.score ?? 1, color: m.color }));
+  const fc = dash.counts[fd];
+  const total = dash.total_loss_trades || (dash.counts.cut + dash.counts.entry);
+  const pct = total > 0 ? Math.round((fc / total) * 100) : 0;
+  const dx = DX_TEXT[fd];
   return (
     <div>
       <Section step="3" label="복기 루프 · 3단계 진단 대시보드" />
-      <h2 style={{ fontSize: "clamp(24px,4.2vw,36px)", fontWeight: 700, color: "#0B2E59", lineHeight: 1.3, margin: "14px 0 12px" }}>당신의 1순위 문제는<br /><span>{dash.dominant.name}</span>입니다.</h2>
-      <p style={{ color: "#8B95A1", fontSize: 16, lineHeight: 1.65, margin: "0 0 26px", maxWidth: 620 }}>본인 탓 손실 <b style={{ color: "#191F28" }}>{dash.total_loss_trades}건</b> 중 가장 큰 덩어리예요. 비난이 아니라, 여기서부터 바꿔보자는 신호예요.</p>
+      <h2 style={{ fontSize: "clamp(24px,4.2vw,36px)", fontWeight: 700, color: "#0B2E59", lineHeight: 1.3, margin: "14px 0 12px" }}>이번에 짚어볼 문제는<br /><span>{m.name}</span>입니다.</h2>
+      <p style={{ color: "#8B95A1", fontSize: 16, lineHeight: 1.65, margin: "0 0 26px", maxWidth: 620 }}>본인 탓 손실 <b style={{ color: "#191F28" }}>{total}건</b> 중 <b style={{ color: m.color }}>{m.name} {fc}건</b>을 깊게 들여다봤어요. 비난이 아니라, 여기서부터 바꿔보자는 신호예요.</p>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 13, marginBottom: 22 }}>
-        <Stat label="본인 탓 손실 거래" value={`${dash.total_loss_trades}`} unit="건" />
+        <Stat label="본인 탓 손실 거래" value={`${total}`} unit="건" />
         <Stat label="손절실패" value={`${dash.counts.cut}`} unit="건" />
         <Stat label="진입오류" value={`${dash.counts.entry}`} unit="건" />
       </div>
 
-      {trades.length > 0 && (
-        <div style={{ background: "#F8F9FA", border: "1px solid #F2F4F6", borderRadius: 16, padding: "18px 18px 16px", marginBottom: 22 }}>
-          <div style={{ fontSize: 14.5, fontWeight: 600, marginBottom: 16 }}>손실 거래 {trades.length}건 · 위험점수 크기</div>
-          <LossBars values={bars} height={150} />
+      {focusTrades.length > 0 && (
+        <div style={{ background: "#F8F9FA", border: "1px solid #F2F4F6", borderRadius: 16, padding: "18px 18px 16px", marginBottom: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+            <DomainIcon type={fd} size={18} />
+            <div style={{ fontSize: 14.5, fontWeight: 600 }}>{m.name} 거래 {focusTrades.length}건<span style={{ color: "#8B95A1", fontWeight: 400, fontSize: 13, marginLeft: 8 }}>막대 1개 = 거래 1건 · 위험점수 크기</span></div>
+          </div>
+          <LossBars values={bars} height={100} />
         </div>
       )}
 
-      <div style={{ background: "#F2F4F6", borderRadius: 14, padding: "20px 20px 22px", marginBottom: 14 }}>
-        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 20 }}>손실 도메인 분포<span style={{ color: "#8B95A1", fontWeight: 400, fontSize: 13.5, marginLeft: 8 }}>총 {dash.total_loss_trades}건</span></div>
-        {dash.dist.map((d) => {
-          const max = Math.max(1, ...dash.dist.map((x) => x.count));
-          return (
-            <div key={d.id} style={{ marginBottom: 16 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 9 }}>
-                <DomainIcon type={d.id} size={18} />
-                <div style={{ fontSize: 15, fontWeight: 600 }}>{d.name}</div>
-                <div style={{ marginLeft: "auto", fontSize: 14.5, color: "#8B95A1" }}><b style={{ color: "#191F28" }}>{d.count}</b>건</div>
-              </div>
-              <div style={{ height: 12, background: "#E9ECEF", borderRadius: 7, overflow: "hidden" }}>
-                <div style={{ height: "100%", background: d.color, width: `${Math.round((d.count / max) * 100)}%` }} />
-              </div>
-              <div style={{ fontSize: 12, color: "#8B95A1", marginTop: 8 }}>{d.psych} 흡수 심리</div>
-            </div>
-          );
-        })}
+      <div style={{ background: m.tint, borderRadius: 16, padding: "20px 20px 22px", marginBottom: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 13 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: "#fff" }}><DomainIcon type={fd} size={18} /></div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#191F28" }}>이런 양상이에요</div>
+        </div>
+        <p style={{ fontSize: 15, lineHeight: 1.75, color: "#333D4B", margin: "0 0 14px" }}>
+          전체 손실 <b style={{ color: "#191F28" }}>{total}건</b> 가운데 <b style={{ color: m.color }}>{m.name}가 {fc}건({pct}%)</b>, {DOMAIN[od].name}가 {dash.counts[od]}건이에요. {dx.pattern}
+        </p>
+        <div style={{ background: "#fff", borderRadius: 12, padding: "14px 15px" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: m.color, marginBottom: 6 }}>왜 이런 일이 반복될까요</div>
+          <p style={{ fontSize: 14, lineHeight: 1.7, color: "#4E5968", margin: 0 }}>{dx.cause}</p>
+        </div>
       </div>
 
-      <div style={{ fontSize: 14, color: "#8B95A1", margin: "14px 0 11px" }}>도메인 카드를 누르면 해당 거래만 모아 볼 수 있어요.</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 13 }}>
-        {dash.typeCards.map((c) => (
-          <button key={c.id} onClick={() => onCard(c.id)} style={{ textAlign: "left", cursor: "pointer", background: "#fff", border: "1px solid #E5E8EB", borderTop: "3px solid " + c.color, borderRadius: 14, padding: 18 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div style={{ width: 38, height: 38, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center", background: c.tint }}><DomainIcon type={c.id} size={20} /></div>
-              <div style={{ fontSize: 26, fontWeight: 700, color: c.color }}>{c.count}<span style={{ fontSize: 14, color: "#8B95A1", marginLeft: 2, fontWeight: 500 }}>건</span></div>
-            </div>
-            <div style={{ fontSize: 15.5, fontWeight: 700, marginTop: 14 }}>{c.name}</div>
-            <div style={{ fontSize: 13.5, color: "#8B95A1", marginTop: 4, lineHeight: 1.5 }}>“{c.def}”</div>
-            <div style={{ display: "inline-flex", marginTop: 11, padding: "4px 9px", borderRadius: 7, background: c.tint }}><span style={{ fontSize: 12.5, color: c.color, fontWeight: 600 }}>{c.psychLabel}</span></div>
-            <div style={{ fontSize: 13.5, color: c.color, marginTop: 12, fontWeight: 500 }}>거래 보기 →</div>
-          </button>
-        ))}
-      </div>
+      <button onClick={() => onCard(fd)} style={{ ...primaryBtn, background: "#fff", color: m.color, border: "1.5px solid " + m.color, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+        거래별로 더 자세히 분석해볼까요? →
+      </button>
     </div>
   );
 }

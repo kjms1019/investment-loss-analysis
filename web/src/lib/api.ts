@@ -48,6 +48,9 @@ export interface Trade {
   signals: { 확대: number | null; 지연: number | null; 물타기: number | null } | null;
 }
 
+// 분석 차트용 전체 거래(이익+손실). type=null 이면 이익·비선별 거래.
+export interface AllTrade { code: string; name: string; date: string; pnl: number; type: DomainId | null; }
+
 export interface Pattern {
   type: DomainId; typeName: string; color: string; tint: string;
   title: string; stat: string; tag: string; example: string; correction: string;
@@ -70,6 +73,7 @@ export const api = {
   users: () => get<UserItem[]>(`/api/users`),
   dashboard: (u: string) => get<Dashboard>(`/api/dashboard/${encodeURIComponent(u)}`),
   trades: (u: string) => get<{ trades: Trade[]; count: number }>(`/api/trades/${encodeURIComponent(u)}`),
+  allTrades: (u: string) => get<{ trades: AllTrade[]; count: number }>(`/api/all-trades/${encodeURIComponent(u)}`),
   profile: (u: string) => get<{ patterns: Pattern[] }>(`/api/profile/${encodeURIComponent(u)}`),
   alerts: (u: string) => get<{ alerts: Alert[] }>(`/api/alerts/${encodeURIComponent(u)}`),
 };
