@@ -6,15 +6,12 @@ holding_market_min1.py(보유종목 실시간 시세)와 데모 백필 어댑터
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 
-_ROOT = Path(__file__).resolve().parents[2]
-MIN1_DIR = _ROOT / "analysis" / "data" / "min1"
-CODES_CSV = _ROOT / "analysis" / "data" / ".cache" / "kospi_codes.csv"
+from analysis.common.paths import CODES_CSV, MIN1_DIR  # 데이터 루트 단일 소스(MIRAE_DATA_ROOT)
 
 _min1_cache: dict[str, Optional[pd.DataFrame]] = {}
 _min1_ohlcv_cache: dict[str, Optional[pd.DataFrame]] = {}
