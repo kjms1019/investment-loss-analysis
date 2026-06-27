@@ -717,23 +717,104 @@ def profile(user_id: str) -> dict:
     return {"user_id": user_id, "patterns": [_pattern_dto(p) for p in pats]}
 
 
+# 실시간(미래 23~26일) 평가 기준 시각 — 현재=23일 컷오프 가정.
+from datetime import datetime as _dt, timedelta as _td  # noqa: E402
+_STOP_ASOF = _dt(2026, 6, 25, 11, 0)   # 보유 종목 급락 평가 시점
+_ENTRY_ASOF = _dt(2026, 6, 24, 0, 0)   # 다가오는 매수 평가 기준
+_STOP_LOSS_PCT = 0.05                  # holding_market_min1 기본 손절폭과 일치
+
+
+@lru_cache(maxsize=1)
+def _holding_entry_at() -> dict:
+    """(user_id, 종목명) → 매수일시 (현재보유 시트). 손절 차트의 진입가·손절선 산출용."""
+    import pandas as pd
+    out: dict = {}
+    try:
+        df = pd.ExcelFile(_FIXTURE).parse("현재보유")
+        for _, r in df.iterrows():
+            out[(str(r["사용자명"]), str(r["종목명"]))] = pd.to_datetime(r["매수일시"]).to_pydatetime()
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def _downsample_df(df, max_points: int = 70):
+    n = len(df)
+    if n <= max_points:
+        return df.reset_index(drop=True)
+    step = n / max_points
+    idx = sorted({int(i * step) for i in range(max_points)} | {0, n - 1})
+    return df.iloc[idx].reset_index(drop=True)
+
+
+def _alert_chart(code: str, *, kind: str, at: _dt, entry_at=None) -> Optional[dict]:
+    """실시간 주식창 차트: 이벤트 직전 구간 분봉 + 마커.
+
+    kind='stop' : 보유종목 급락 → 손절선 접근. 마커=현재가, 손절선, 최근 고점.
+    kind='entry': 다가오는 매수 → 진입 시점. 마커=매수 예정점, 최근 고점.
+    """
+    from analysis.common.min1_lookup import load_min1, price_at
+    df = load_min1(code)
+    if df is None or df.empty:
+        return None
+    # 손절 차트는 진입~현재 전체를 그려 손절선 돌파→현재가까지 보이게(이미 깊은 손실이라 최근창엔 손절선이 화면 밖).
+    if kind == "stop" and entry_at is not None:
+        lo_t = entry_at
+    else:
+        lo_t = at - (_td(days=3) if kind == "entry" else _td(days=4))
+    win = df[(df["datetime"] >= lo_t) & (df["datetime"] <= at)]
+    if len(win) < 2:
+        return None
+    win = _downsample_df(win.sort_values("datetime"))
+    series = [{"t": t.isoformat(), "c": int(round(c))} for t, c in zip(win["datetime"], win["close"])]
+    closes = [s["c"] for s in series]
+    hi_i = closes.index(max(closes))
+    out = {
+        "kind": kind, "series": series,
+        "marker": {"i": len(series) - 1, "t": series[-1]["t"], "price": closes[-1]},  # 현재가/매수점
+        "entry": None, "stop": None, "breach": None,
+        "high": {"i": hi_i, "price": closes[hi_i]},
+        "lo": min(closes), "hi": max(closes), "breached": False,
+    }
+    if kind == "stop" and entry_at is not None:
+        ep = price_at(df, entry_at)
+        if ep:
+            out["entry"] = {"i": 0, "t": series[0]["t"], "price": int(round(ep))}
+            stop = round(ep * (1 - _STOP_LOSS_PCT))
+            out["stop"] = stop
+            out["breached"] = closes[-1] <= stop
+            bi = next((i for i, c in enumerate(closes) if c <= stop), None)
+            if bi is not None:
+                out["breach"] = {"i": bi, "t": series[bi]["t"]}
+    return out
+
+
 @lru_cache(maxsize=1)
 def _all_alerts() -> dict:
     """데모 fixture 의 B(진입)·C(손절) 알림을 전 사용자 1회 계산해 캐시.
 
     매 요청마다 재평가하면 수십 초 걸리므로(분봉 전수 평가) 프로세스 캐시한다.
+    각 알림에 '실시간 주식창' 차트(이벤트 직전 분봉 + 마커)를 함께 붙인다.
     """
-    from datetime import datetime
     from analysis.orchestrator.demo_alert_runner import check_entry_warnings, check_stop_loss_warnings
 
     xlsx = str(_FIXTURE)
+    eat = _holding_entry_at()
     by_user: dict[str, list] = {}
-    for a in check_stop_loss_warnings(xlsx, datetime(2026, 6, 25, 11, 0)):
+    for a in check_stop_loss_warnings(xlsx, _STOP_ASOF):
+        chart = _alert_chart(a.get("code"), kind="stop", at=_STOP_ASOF,
+                             entry_at=eat.get((a.get("user_id"), a.get("name"))))
         by_user.setdefault(a.get("user_id"), []).append(
-            {"kind": "보유 점검", "type": "cut", **_alert_common(a)})
-    for a in check_entry_warnings(xlsx, datetime(2026, 6, 24, 0, 0)):
+            {"kind": "보유 점검", "type": "cut", "chart": chart, **_alert_common(a)})
+    for a in check_entry_warnings(xlsx, _ENTRY_ASOF):
+        sched = a.get("scheduled_at")
+        try:
+            sched_dt = _dt.fromisoformat(str(sched)) if sched else _ENTRY_ASOF
+        except Exception:  # noqa: BLE001
+            sched_dt = _ENTRY_ASOF
+        chart = _alert_chart(a.get("code"), kind="entry", at=sched_dt)
         by_user.setdefault(a.get("user_id"), []).append(
-            {"kind": "매수 시점", "type": "entry", **_alert_common(a)})
+            {"kind": "매수 시점", "type": "entry", "chart": chart, **_alert_common(a)})
     return by_user
 
 
@@ -741,6 +822,200 @@ def _all_alerts() -> dict:
 def alerts(user_id: str) -> dict:
     """실시간 알림(B 진입 + C 손절) — 데모 fixture 를 미래 시점으로 평가(캐시)."""
     return {"user_id": user_id, "alerts": _all_alerts().get(user_id, [])}
+
+
+# 포트폴리오를 풍성하게 채울 우량주(있으면 우선). fixture 보유가 1~5종목뿐이라 데모용으로 보강.
+_PORTFOLIO_FILL = [
+    "삼성전자", "SK하이닉스", "현대차", "기아", "NAVER", "카카오", "LG에너지솔루션",
+    "삼성바이오로직스", "셀트리온", "POSCO홀딩스", "현대모비스", "KB금융", "신한지주",
+    "삼성SDI", "LG화학", "삼성물산", "하나금융지주", "SK이노베이션", "KT&G", "한국전력",
+    "포스코퓨처엠", "크래프톤", "삼성생명", "두산에너빌리티", "HMM", "S-Oil", "고려아연",
+]
+_SYNTH_ENTRY_DATES = [
+    "2025-08-12 10:00", "2025-09-24 13:00", "2025-10-15 11:00", "2025-11-07 09:30",
+    "2025-12-03 14:00", "2026-01-20 10:00", "2026-02-11 13:00", "2025-09-05 10:30",
+]
+
+
+@lru_cache(maxsize=1)
+def _all_demo_users() -> tuple:
+    """데모 사용자 전체(현재보유 0인 사람도 포함). 합성 보유를 모두에게 주려고."""
+    import sqlite3
+    try:
+        conn = sqlite3.connect(_PROFILE_DB)
+        rows = conn.execute("select distinct user_id from user_profiles order by user_id").fetchall()
+        conn.close()
+        return tuple(r[0] for r in rows)
+    except Exception:  # noqa: BLE001
+        return tuple()
+
+
+def _synthetic_holdings(user: str, exclude: set, want: int) -> list:
+    """실제 주가(min1) 기반 합성 보유 — 우량주에 2025 매수일·수량 부여. 이익/손실은 실제 등락대로."""
+    if want <= 0:
+        return []
+    import random
+    from datetime import datetime as _dtm
+    from analysis.common.min1_lookup import load_name_to_code, load_min1, price_at
+    n2c = load_name_to_code()
+    seed = sum(ord(c) for c in user) * 7 + 13
+    rnd = random.Random(seed)
+    names = [n for n in _PORTFOLIO_FILL if n in n2c]
+    rnd.shuffle(names)
+    out: list = []
+    used = set(exclude)
+    for name in names:
+        if len(out) >= want:
+            break
+        code = n2c.get(name)
+        if not code or code in used:
+            continue
+        m = load_min1(code)
+        edt = _dtm.fromisoformat(_SYNTH_ENTRY_DATES[(seed + len(out)) % len(_SYNTH_ENTRY_DATES)])
+        ep = price_at(m, edt); cur = price_at(m, _STOP_ASOF)
+        if not ep or not cur:
+            continue
+        pct = (cur - ep) / ep * 100.0
+        if pct < -55 or pct > 55:  # 데이터 특이값(비현실적 등락) 제외 — 믿을 만한 범위만
+            continue
+        used.add(code)
+        stop = round(ep * (1 - _STOP_LOSS_PCT))
+        out.append({
+            "name": name, "code": code, "qty": max(1, round(1_500_000 / cur)),
+            "entry_price": round(ep), "current_price": round(cur), "pct": round(pct, 1),
+            "stop": stop, "breached": cur <= stop,
+            "chart": _alert_chart(code, kind="stop", at=_STOP_ASOF, entry_at=edt),
+            "status": "ok", "risk": None,
+        })
+    return out
+
+
+def _near_stop(cur: float, stop: Optional[float]) -> bool:
+    """현재가가 손절선에 '닿을락말락'(−4%~+6%) 인가 — 이때 경고해야 의미 있다.
+    이미 손절선을 한참 지난(−10%++) 종목은 '이미 손절실패'라 라이브 경고 대상이 아니다."""
+    return bool(stop) and (stop * 0.96) <= cur <= (stop * 1.06)
+
+
+def _stop_alert_risk(h: dict) -> dict:
+    name, stop, pct = h["name"], h["stop"], h["pct"]
+    above = h["current_price"] > stop
+    if above:
+        msg = f"{name}이(가) 손절선 ₩{stop:,}에 가까워지고 있어요. 당신은 손절을 미루는 경향이 있어요 — 이번엔 미리 정한 손절선을 꼭 지키세요."
+    else:
+        msg = f"{name}이(가) 손절선 ₩{stop:,}을 막 건드렸어요. 더 버티지 말고 지금 손절선을 지키세요."
+    return {"level": "high", "score": 88,
+            "reasons": ["손절선 근접", "최근 하락 추세", f"보유 손익 {pct:+.1f}%"], "message": msg}
+
+
+def _danger_holding(user: str, exclude: set) -> Optional[dict]:
+    """손절선으로 '내려가며' 막 닿은 보유를 실거래 주가로 합성 — 라이브 경고용.
+
+    조건: 진입(최근 고점)에서 하락해 현재가가 ① 최근 저점 근처(=계속 내려가는 중, 반등 아님)
+    ② 고점 대비 −5% 안팎(손절선 ≈ 현재가). 차트가 '고점→하락→손절선 터치'로 보이게."""
+    import random
+    from datetime import timedelta
+    from analysis.common.min1_lookup import load_name_to_code, load_min1, price_at
+    n2c = load_name_to_code()
+    rnd = random.Random(sum(ord(c) for c in user) * 11 + 5)
+    pref = [n for n in _PORTFOLIO_FILL if n in n2c]
+    rest = [n for n in n2c if n not in _PORTFOLIO_FILL]
+    rnd.shuffle(pref); rnd.shuffle(rest)
+    names = pref + rest  # 우량주 우선, 없으면 전체 종목에서 '손절선으로 내려가는' 종목 탐색
+    for name in names:
+        code = n2c.get(name)
+        if not code or code in exclude:
+            continue
+        m = load_min1(code)
+        if m is None or m.empty:
+            continue
+        cur = price_at(m, _STOP_ASOF)
+        if not cur:
+            continue
+        win = m[(m["datetime"] >= _STOP_ASOF - timedelta(days=50)) & (m["datetime"] <= _STOP_ASOF)]
+        win = win.sort_values("datetime").reset_index(drop=True)
+        if len(win) < 10:
+            continue
+        lo = float(win["close"].min())
+        lo_pos = int(win["close"].idxmin())
+        if cur > lo * 1.03:           # 현재가가 최근 저점 근처가 아니면(반등) 제외
+            continue
+        if lo_pos < len(win) * 0.5:    # 저점이 최근(뒤쪽 절반)이어야 = 내려가는 중
+            continue
+        before = win.iloc[: lo_pos + 1]
+        hi = float(before["close"].max())
+        hi_pos = int(before["close"].idxmax())
+        if not (1.035 <= hi / cur <= 1.10):   # 고점이 현재가 대비 +3.5~10% (≈ −5% 하락폭)
+            continue
+        if hi_pos > len(win) * 0.65:   # 고점은 앞쪽이어야 = 하락 구간 확보
+            continue
+        edt = before.iloc[hi_pos]["datetime"].to_pydatetime()
+        stop = round(hi * (1 - _STOP_LOSS_PCT))
+        h = {"name": name, "code": code, "qty": max(1, round(1_500_000 / cur)),
+             "entry_price": round(hi), "current_price": round(cur), "pct": round((cur - hi) / hi * 100, 1),
+             "stop": stop, "breached": cur <= stop,
+             "chart": _alert_chart(code, kind="stop", at=_STOP_ASOF, entry_at=edt), "status": "alert"}
+        h["risk"] = _stop_alert_risk(h)
+        return h
+    return None
+
+
+@lru_cache(maxsize=1)
+def _all_holdings() -> dict:
+    """현재보유 전체 포트폴리오(이익+손실 혼재)를 실시간 추적 대상으로 반환.
+
+    손실난 종목만이 아니라 보유 중 전부를 트래킹한다. 라이브 손절 경고는 '손절선에 막 닿은'
+    종목에만 띄운다(이미 한참 지난 깊은 손실은 추적만). fixture 보유가 사람당 1~5종목뿐이라
+    우량주 합성 보유로 7종목까지 채우고, 손절선 근접 종목이 없으면 하나 합성해 경고를 만든다.
+    """
+    import pandas as pd
+    from analysis.common.min1_lookup import load_name_to_code, load_min1, price_at
+
+    n2c = load_name_to_code()
+    out: dict = {}
+    try:
+        df = pd.ExcelFile(_FIXTURE).parse("현재보유")
+    except Exception:  # noqa: BLE001
+        return out
+    for _, r in df.iterrows():
+        user = str(r["사용자명"]); name = str(r["종목명"]); code = n2c.get(name)
+        if not code:
+            continue
+        m = load_min1(code)
+        entry_at = pd.to_datetime(r["매수일시"]).to_pydatetime()
+        ep = price_at(m, entry_at); cur = price_at(m, _STOP_ASOF)
+        if not ep or not cur:
+            continue
+        pct = (cur - ep) / ep * 100.0
+        stop = round(ep * (1 - _STOP_LOSS_PCT))
+        chart = _alert_chart(code, kind="stop", at=_STOP_ASOF, entry_at=entry_at)
+        out.setdefault(user, []).append({
+            "name": name, "code": code, "qty": int(r["현재보유수량"]),
+            "entry_price": round(ep), "current_price": round(cur), "pct": round(pct, 1),
+            "stop": stop, "breached": cur <= stop, "chart": chart,
+            "status": "ok", "risk": None,  # 라이브 경고 여부는 아래 손절선 근접 판정에서 결정
+        })
+    # 사용자별: 손절선 근접 판정 → 경고, 없으면 근접 종목 합성, 그다음 우량주로 7종목까지 채움.
+    TARGET = 7
+    for user in set(out) | set(_all_demo_users()):
+        base = out.setdefault(user, [])
+        for h in base:  # 실제 보유 중 손절선 '근접'한 것만 라이브 경고로
+            if _near_stop(h["current_price"], h["stop"]):
+                h["status"] = "alert"; h["risk"] = _stop_alert_risk(h)
+        if not any(h["status"] == "alert" for h in base):  # 근접 종목이 없으면 하나 합성
+            d = _danger_holding(user, {h["code"] for h in base})
+            if d:
+                base.insert(0, d)
+        exclude = {h["code"] for h in base}
+        base.extend(_synthetic_holdings(user, exclude, TARGET - len(base)))
+        base.sort(key=lambda h: (0 if h["status"] == "alert" else 1, h["pct"]))
+    return out
+
+
+@app.get("/api/holdings/{user_id}")
+def holdings(user_id: str) -> dict:
+    """실시간 추적 대상: 보유 전체(이익+손실) + 다가오는 매수 예정."""
+    plans = [a for a in _all_alerts().get(user_id, []) if a.get("type") == "entry"]
+    return {"user_id": user_id, "holdings": _all_holdings().get(user_id, []), "plans": plans}
 
 
 def _alert_common(a: dict) -> dict:

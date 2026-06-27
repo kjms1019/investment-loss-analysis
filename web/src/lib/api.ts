@@ -84,11 +84,32 @@ export interface Disposition {
   solutions: string[];
 }
 
+export interface AlertChart {
+  kind: "stop" | "entry";
+  series: { t: string; c: number }[];
+  marker: { i: number; t: string; price: number };
+  entry: { i: number; t: string; price: number } | null;
+  stop: number | null;
+  breach: { i: number; t: string } | null;
+  high: { i: number; price: number };
+  lo: number; hi: number; breached: boolean;
+}
+
 export interface Alert {
   kind: string; type: DomainId; title: string; body: string;
   name?: string; code?: string; risk: number; level?: string;
   reasons: string[]; basis: string;
+  chart: AlertChart | null;
 }
+
+export interface Holding {
+  name: string; code: string; qty: number;
+  entry_price: number; current_price: number; pct: number;
+  stop: number; breached: boolean; chart: AlertChart | null;
+  status: "alert" | "ok";
+  risk: { level: string | null; score: number; reasons: string[]; message: string } | null;
+}
+export interface HoldingsResp { user_id: string; holdings: Holding[]; plans: Alert[]; }
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { cache: "no-store" });
@@ -105,4 +126,5 @@ export const api = {
   profile: (u: string) => get<{ patterns: Pattern[] }>(`/api/profile/${encodeURIComponent(u)}`),
   disposition: (u: string) => get<Disposition>(`/api/disposition/${encodeURIComponent(u)}`),
   alerts: (u: string) => get<{ alerts: Alert[] }>(`/api/alerts/${encodeURIComponent(u)}`),
+  holdings: (u: string) => get<HoldingsResp>(`/api/holdings/${encodeURIComponent(u)}`),
 };

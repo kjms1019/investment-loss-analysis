@@ -22,3 +22,6 @@ button { font-family: inherit; }
 @keyframes wlspin { to { transform: rotate(360deg); } }
 @keyframes wlpulse { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
 @keyframes wlslidein { 0% { opacity: 0; transform: translateY(10px) scale(.98); } 100% { opacity: 1; transform: none; } }
+@keyframes wlbell { 0%,100% { transform: rotate(0); } 15% { transform: rotate(16deg); } 30% { transform: rotate(-14deg); } 45% { transform: rotate(10deg); } 60% { transform: rotate(-7deg); } 75% { transform: rotate(3deg); } }
+@keyframes wlcardin { 0% { opacity: 0; transform: translateX(26px) scale(.97); } 100% { opacity: 1; transform: none; } }
+@keyframes wlpop { 0% { transform: scale(0); } 70% { transform: scale(1.25); } 100% { transform: scale(1); } }

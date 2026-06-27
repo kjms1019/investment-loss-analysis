@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import {
-  api, type Alert, type AllTrade, type Dashboard, type Trade, type UserItem, type DomainId, type Disposition,
+  api, type Alert, type AllTrade, type Dashboard, type Trade, type UserItem, type DomainId, type Disposition, type HoldingsResp, type Holding,
 } from "@/lib/api";
-import { DOMAIN, SEV_LABEL, DomainIcon, Logo, Section, LossBars, TradeMiniChart } from "@/components/why/ui";
+import { DOMAIN, SEV_LABEL, DomainIcon, Logo, Section, LossBars, TradeMiniChart, AlertMiniChart } from "@/components/why/ui";
 
 const ROUTES = ["login", "consent", "upload", "analyze", "dashboard", "trades", "profile", "alerts"] as const;
 type Screen = (typeof ROUTES)[number];
@@ -26,7 +26,7 @@ export default function Home() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [allTrades, setAllTrades] = useState<AllTrade[]>([]);
   const [disp, setDisp] = useState<Disposition | null>(null);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [hold, setHold] = useState<HoldingsResp | null>(null);
   const [err, setErr] = useState<string>("");
 
   const [filterType, setFilterType] = useState<DomainId | "all">("all");
@@ -76,7 +76,7 @@ export default function Home() {
     api.trades(u).then((d) => setTrades(d.trades)).catch(() => setTrades([]));
     api.allTrades(u).then((d) => setAllTrades(d.trades)).catch(() => setAllTrades([]));
     api.disposition(u).then(setDisp).catch(() => setDisp(null));
-    api.alerts(u).then((d) => setAlerts(d.alerts)).catch(() => setAlerts([]));
+    api.holdings(u).then(setHold).catch(() => setHold(null));
   }, []);
   useEffect(() => { loadUser(user); }, [user, loadUser]);
 
@@ -146,7 +146,7 @@ export default function Home() {
           />;
         })()}
         {screen === "profile" && <ProfileView disp={disp} userName={curUserName} />}
-        {screen === "alerts" && <AlertsView alerts={alerts} />}
+        {screen === "alerts" && <AlertsView data={hold} />}
       </main>
     </div>
   );
@@ -771,50 +771,287 @@ function ProfileView({ disp, userName }: { disp: Disposition | null; userName: s
   );
 }
 
-// ── ⑥ ALERTS ─────────────────────────────────────────────────────────────────
-function AlertsView({ alerts }: { alerts: Alert[] }) {
+// ── ⑥ ALERTS (실시간 보유 추적) ──────────────────────────────────────────────
+function HoldingCard({ h }: { h: Holding }) {
+  const navy = DOMAIN.cut.color;
+  const alert = h.status === "alert";
+  const accent = alert ? "#F5500A" : "#C4CDD5";
+  const pos = h.pct >= 0;
+  return (
+    <div style={{ background: "#fff", borderRadius: 18, overflow: "hidden", borderLeft: "4px solid " + accent, boxShadow: "0 4px 16px rgba(0,0,0,.07)", animation: "wlslidein .45s ease both" }}>
+      <div style={{ background: "#FBFCFD", borderBottom: "1px solid #F2F4F6", padding: "13px 15px 6px" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 2 }}>
+          <span style={{ fontSize: 15.5, fontWeight: 700 }}>{h.name}</span>
+          <span style={{ fontSize: 12, color: "#8B95A1" }}>{h.code}</span>
+          <span style={{ marginLeft: "auto", fontSize: 14.5, fontWeight: 700 }}>₩{h.current_price.toLocaleString()}</span>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: pos ? "#0B8043" : "#E2574C" }}>{pos ? "+" : ""}{h.pct}%</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
+          <span style={{ fontSize: 11, color: "#8B95A1" }}>{h.qty}주 보유 · 손절선 ₩{h.stop.toLocaleString()}</span>
+          <span style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 700, borderRadius: 5, padding: "2px 7px", color: alert ? "#fff" : (pos ? "#0B8043" : "#8B95A1"), background: alert ? "#F5500A" : (pos ? "#E7F4ED" : "#F2F4F6") }}>
+            {alert ? "손절 경고" : pos ? "이익 추적 중" : "추적 중"}
+          </span>
+        </div>
+        {h.chart && <AlertMiniChart chart={h.chart} color={navy} />}
+      </div>
+      <div style={{ padding: "12px 15px" }}>
+        {alert && h.risk ? (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <div style={{ width: 20, height: 20, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: "#F5500A" }}>
+                <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><polyline points="3 7 9 13 13 9 21 17" /><polyline points="21 12 21 17 16 17" /></svg>
+              </div>
+              <span style={{ fontSize: 12, fontWeight: 600 }}>왜 잃었지?</span>
+              <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: "#fff", background: "#F5500A", borderRadius: 6, padding: "3px 8px" }}>예측 경고</span>
+            </div>
+            <div style={{ fontSize: 14, lineHeight: 1.6, color: "#4E5968", marginBottom: 10 }}>{h.risk.message}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 11.5, color: "#8B95A1" }}>위험도</span>
+              <div style={{ flex: 1, height: 6, borderRadius: 4, background: "#EEF1F4", overflow: "hidden" }}><div style={{ width: h.risk.score + "%", height: "100%", background: "#F5500A" }} /></div>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#F5500A" }}>{h.risk.score}</span>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+              {h.risk.reasons.map((r, k) => <span key={k} style={{ fontSize: 11, color: "#4E5968", background: "#F2F4F6", borderRadius: 5, padding: "3px 7px" }}>{r}</span>)}
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: 13, color: "#8B95A1", lineHeight: 1.55 }}>
+            {pos ? "아직 손절선 위에서 이익 구간이에요. 떨어지면 바로 알려드릴게요." : "손절선 위에서 추적 중이에요. 손절선에 닿으면 알림을 띄울게요."}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PlanCard({ a }: { a: Alert }) {
+  const color = DOMAIN[a.type].color; const ch = a.chart;
+  return (
+    <div style={{ background: "#fff", borderRadius: 18, overflow: "hidden", borderLeft: "4px solid " + color, boxShadow: "0 4px 16px rgba(0,0,0,.07)", animation: "wlslidein .45s ease both" }}>
+      {ch && (
+        <div style={{ background: "#FBFCFD", borderBottom: "1px solid #F2F4F6", padding: "13px 15px 6px" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 2 }}>
+            <span style={{ fontSize: 15.5, fontWeight: 700 }}>{a.name}</span>
+            <span style={{ fontSize: 12, color: "#8B95A1" }}>{a.code}</span>
+            <span style={{ marginLeft: "auto", fontSize: 14.5, fontWeight: 700 }}>₩{ch.marker.price.toLocaleString()}</span>
+          </div>
+          <div style={{ fontSize: 11, color: "#8B95A1", marginBottom: 4 }}>매수 예정 · 진입 시점 추적</div>
+          <AlertMiniChart chart={ch} color={color} />
+        </div>
+      )}
+      <div style={{ padding: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
+          <div style={{ width: 22, height: 22, borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", background: "#F5500A" }}>
+            <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><polyline points="3 7 9 13 13 9 21 17" /><polyline points="21 12 21 17 16 17" /></svg>
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 600 }}>왜 잃었지?</span>
+          <span style={{ fontSize: 12.5, color, fontWeight: 500 }}>· {a.kind}</span>
+          <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: "#fff", background: "#F5500A", borderRadius: 6, padding: "3px 8px" }}>예측 알림</span>
+        </div>
+        <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.45, marginBottom: 5 }}>{a.title}</div>
+        <div style={{ fontSize: 14, lineHeight: 1.6, color: "#4E5968" }}>{a.body}</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 10 }}>
+          {a.reasons.map((r, k) => <span key={k} style={{ fontSize: 11, color: "#4E5968", background: "#F2F4F6", borderRadius: 5, padding: "3px 7px" }}>{r}</span>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 한국식 등락 색 (상승=빨강, 하락=파랑)
+const UP = "#F0454A", DOWN = "#2D7FF9";
+const krColor = (v: number) => (v > 0 ? UP : v < 0 ? DOWN : "#8B95A1");
+
+function OrderRow({ label, value, step }: { label: string; value: string; step?: boolean }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fff", border: "1px solid #E5E8EB", borderRadius: 10, padding: "10px 12px" }}>
+      <span style={{ fontSize: 11.5, color: "#8B95A1" }}>{label}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {step && <span style={{ width: 18, height: 18, borderRadius: 5, background: "#F2F4F6", color: "#8B95A1", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center" }}>−</span>}
+        <span style={{ fontSize: 14, fontWeight: 700 }}>{value}</span>
+        {step && <span style={{ width: 18, height: 18, borderRadius: 5, background: "#F2F4F6", color: "#8B95A1", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center" }}>+</span>}
+      </div>
+    </div>
+  );
+}
+
+// 미래에셋 앱 목업 (레퍼런스 기반) — scenario='stop' 보유목록 / 'entry' 매수주문. 우상단 종 알림.
+function PhoneApp({ scenario, holdings, plan, highlightCode, opened, onBell }: {
+  scenario: "stop" | "entry"; holdings: Holding[]; plan: Alert | null; highlightCode?: string; opened: boolean; onBell: () => void;
+}) {
+  const isStop = scenario === "stop";
+  const bell = isStop ? DOMAIN.cut.color : DOMAIN.entry.color;
+  const ringing = !opened;
+  const price = plan?.chart?.marker.price ?? 0;
+  const tabs = ["국내주식", "해외주식", "연금·상품"];
+  return (
+    <div style={{ position: "relative", width: 332, flexShrink: 0, padding: 10, background: "linear-gradient(160deg,#23262E,#15171C)", borderRadius: 46, boxShadow: "0 22px 60px rgba(11,46,89,.26)" }}>
+      <div style={{ background: "#fff", borderRadius: 37, overflow: "hidden", height: 686, display: "flex", flexDirection: "column" }}>
+        {/* 상태바 + 다이나믹 아일랜드 */}
+        <div style={{ position: "relative", height: 38, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 22px" }}>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: "#191F28", letterSpacing: .3 }}>9:41</span>
+          <div style={{ position: "absolute", top: 9, left: "50%", transform: "translateX(-50%)", width: 86, height: 20, background: "#15171C", borderRadius: 13 }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <svg width={16} height={11} viewBox="0 0 18 12" fill="#191F28"><rect x="0" y="7" width="3" height="5" rx="1" /><rect x="4.5" y="4.5" width="3" height="7.5" rx="1" /><rect x="9" y="2" width="3" height="10" rx="1" /><rect x="13.5" y="0" width="3" height="12" rx="1" opacity=".35" /></svg>
+            <svg width={15} height={11} viewBox="0 0 16 12" fill="none" stroke="#191F28" strokeWidth="1.4"><path d="M1 4.5a10 10 0 0 1 14 0M3.5 7a6.5 6.5 0 0 1 9 0M8 9.5h.01" strokeLinecap="round" /></svg>
+            <div style={{ display: "flex", alignItems: "center", gap: 1 }}><div style={{ width: 18, height: 10, borderRadius: 3, border: "1.3px solid #191F28", padding: 1.5 }}><div style={{ width: "82%", height: "100%", background: "#191F28", borderRadius: 1 }} /></div><div style={{ width: 1.5, height: 4, background: "#191F28", borderRadius: 1 }} /></div>
+          </div>
+        </div>
+        {/* 검색바 + 종 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "6px 15px 10px" }}>
+          <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 7, background: "#F2F4F6", borderRadius: 11, padding: "9px 12px" }}>
+            <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="#8B95A1" strokeWidth={2.2} strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
+            <span style={{ fontSize: 12, color: "#B0B8C1" }}>주식·상품·뉴스 검색</span>
+          </div>
+          <button onClick={onBell} title="알림" style={{ position: "relative", width: 38, height: 38, borderRadius: 11, border: "none", cursor: "pointer", background: ringing ? bell + "1A" : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width={21} height={21} viewBox="0 0 24 24" fill="none" stroke={ringing ? bell : "#4E5968"} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ transformOrigin: "50% 3px", animation: ringing ? "wlbell 1.1s ease infinite" : "none" }}>
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            {ringing && <span style={{ position: "absolute", top: 6, right: 7, minWidth: 9, height: 9, borderRadius: "50%", background: bell, border: "2px solid #fff", animation: "wlpop .35s ease" }} />}
+          </button>
+        </div>
+        {/* 탭 */}
+        <div style={{ display: "flex", gap: 16, padding: "0 16px", borderBottom: "1px solid #F2F4F6" }}>
+          {tabs.map((t, i) => (
+            <div key={t} style={{ position: "relative", padding: "9px 0 11px", fontSize: 13.5, fontWeight: i === 0 ? 700 : 500, color: i === 0 ? "#191F28" : "#B0B8C1" }}>
+              {t}
+              {i === 0 && <div style={{ position: "absolute", left: 0, right: 0, bottom: -1, height: 2.5, background: "#191F28", borderRadius: 2 }} />}
+            </div>
+          ))}
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", color: "#C4CDD5", fontSize: 16 }}>⋯</div>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+        {isStop ? (
+          <div style={{ padding: "12px 14px 18px" }}>
+            <div style={{ display: "flex", alignItems: "baseline", marginBottom: 4 }}>
+              <span style={{ fontSize: 14, fontWeight: 800, color: "#191F28" }}>내 보유 종목</span>
+              <span style={{ fontSize: 11.5, color: "#8B95A1", marginLeft: "auto" }}>실시간 ·  평가손익</span>
+            </div>
+            <div style={{ display: "flex", gap: 6, margin: "6px 0 12px" }}>
+              {["보유순", "손익순", "관심"].map((s, i) => (
+                <span key={s} style={{ fontSize: 11.5, fontWeight: i === 0 ? 700 : 500, borderRadius: 7, padding: "5px 10px", background: i === 0 ? "#EAF0F8" : "#F8F9FA", color: i === 0 ? "#0B2E59" : "#8B95A1" }}>{s}</span>
+              ))}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {holdings.map((h, i) => {
+                const hot = h.code === highlightCode;
+                return (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 8px", borderTop: i ? "1px solid #F5F6F7" : "none", borderRadius: hot ? 10 : 0, background: hot ? bell + "12" : "transparent", boxShadow: hot ? "inset 3px 0 0 " + bell : "none" }}>
+                    <div style={{ width: 30, height: 30, borderRadius: 9, background: "#F2F4F6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: "#8B95A1", flexShrink: 0 }}>{h.name.slice(0, 1)}</div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h.name}</div>
+                      <div style={{ fontSize: 11, color: "#8B95A1" }}>{h.qty}주 · 평단 ₩{h.entry_price.toLocaleString()}</div>
+                    </div>
+                    <div style={{ marginLeft: "auto", textAlign: "right" }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 700 }}>{h.current_price.toLocaleString()}</div>
+                      <div style={{ fontSize: 11.5, fontWeight: 700, color: krColor(h.pct) }}>{h.pct > 0 ? "▲" : h.pct < 0 ? "▼" : ""} {Math.abs(h.pct)}%</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : plan ? (
+          <div style={{ padding: "14px 15px 18px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+              <div style={{ width: 26, height: 26, borderRadius: 8, background: "#F2F4F6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: "#8B95A1" }}>{(plan.name || "").slice(0, 1)}</div>
+              <span style={{ fontSize: 15.5, fontWeight: 800 }}>{plan.name}</span>
+              <span style={{ fontSize: 11, color: "#8B95A1" }}>{plan.code}</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 14 }}>
+              <span style={{ fontSize: 24, fontWeight: 800, color: UP }}>{price.toLocaleString()}</span>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: UP }}>▲ 상승 추적 중</span>
+            </div>
+            <div style={{ display: "flex", marginBottom: 13, borderRadius: 11, overflow: "hidden", border: "1px solid #E5E8EB" }}>
+              <div style={{ flex: 1, textAlign: "center", padding: "10px", fontSize: 13.5, fontWeight: 700, background: UP, color: "#fff" }}>매수</div>
+              <div style={{ flex: 1, textAlign: "center", padding: "10px", fontSize: 13.5, fontWeight: 600, color: "#8B95A1", background: "#fff" }}>매도</div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 13 }}>
+              <OrderRow label="주문가격" value={`${price.toLocaleString()}`} step />
+              <OrderRow label="주문수량" value="10주" step />
+              <OrderRow label="주문금액" value={`₩${(price * 10).toLocaleString()}`} />
+            </div>
+            <div style={{ background: UP, color: "#fff", textAlign: "center", padding: "14px", borderRadius: 12, fontSize: 15, fontWeight: 700 }}>현금 매수</div>
+          </div>
+        ) : (
+          <div style={{ padding: "40px 20px", textAlign: "center", color: "#8B95A1", fontSize: 13 }}>예정된 매수가 없어요.</div>
+        )}
+        </div>
+        {/* 하단 탭바 */}
+        <div style={{ display: "flex", justifyContent: "space-around", alignItems: "center", padding: "8px 6px 4px", borderTop: "1px solid #F2F4F6" }}>
+          {[
+            { paths: ["M3 11l9-8 9 8", "M5 10v10h14V10"], label: "홈", on: false },
+            { paths: ["M3 17l5-5 4 4 8-8", "M21 8v5h-5"], label: "주식", on: true },
+            { paths: ["M20.8 5.6a5.5 5.5 0 0 0-8.8-1.4 5.5 5.5 0 0 0-8.8 1.4c-1.6 3.2.8 6.4 8.8 12.4 8-6 10.4-9.2 8.8-12.4z"], label: "관심", on: false },
+            { paths: ["M4 5h16v14H4z", "M4 10h16", "M9 5v14"], label: "내자산", on: false },
+            { paths: ["M4 6h16M4 12h16M4 18h16"], label: "전체", on: false },
+          ].map((t, i) => (
+            <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, color: t.on ? "#0B2E59" : "#B0B8C1" }}>
+              <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                {t.paths.map((d, k) => <path key={k} d={d} />)}
+              </svg>
+              <span style={{ fontSize: 9.5, fontWeight: t.on ? 700 : 500 }}>{t.label}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", justifyContent: "center", padding: "3px 0 8px" }}><div style={{ width: 110, height: 4.5, borderRadius: 3, background: "#191F28" }} /></div>
+      </div>
+    </div>
+  );
+}
+
+function AlertsView({ data }: { data: HoldingsResp | null }) {
+  const [scenario, setScenario] = useState<"stop" | "entry">("stop");
+  const [opened, setOpened] = useState(false);
+  const holdings = data?.holdings ?? [];
+  const plans = data?.plans ?? [];
+  const stopHolding = holdings.find((h) => h.status === "alert") ?? holdings[0];
+  const entryPlan = plans[0] ?? null;
+  const hasStop = !!stopHolding, hasEntry = !!entryPlan;
+  // 사용자/시나리오 바뀌면 닫고, 가능한 시나리오로 기본 전환
+  useEffect(() => { setOpened(false); }, [scenario, data?.user_id]);
+  useEffect(() => { if (!hasStop && hasEntry) setScenario("entry"); }, [hasStop, hasEntry]);
+  if (!data) return <div style={{ maxWidth: 560, margin: "0 auto" }}><Loading /></div>;
+
+  const isStop = scenario === "stop";
+  const accent = isStop ? DOMAIN.cut.color : DOMAIN.entry.color;
+  const card = isStop ? (stopHolding && <HoldingCard h={stopHolding} />) : (entryPlan && <PlanCard a={entryPlan} />);
+  const Toggle = ({ id, label, on }: { id: "stop" | "entry"; label: string; on: boolean }) => (
+    <button onClick={() => on && setScenario(id)} disabled={!on}
+      style={{ cursor: on ? "pointer" : "not-allowed", fontSize: 13.5, fontWeight: scenario === id ? 700 : 500, borderRadius: 10, padding: "9px 16px", border: "1.5px solid " + (scenario === id ? (id === "stop" ? DOMAIN.cut.color : DOMAIN.entry.color) : "transparent"), background: scenario === id ? "#fff" : "#F2F4F6", color: !on ? "#C4CDD5" : scenario === id ? (id === "stop" ? DOMAIN.cut.color : DOMAIN.entry.color) : "#8B95A1" }}>
+      {label}
+    </button>
+  );
+
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13.5, color: "#8B95A1", fontWeight: 500, justifyContent: "center" }}>
         <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#0B2E59" }} />알림 루프 · 실시간
       </div>
-      <h2 style={{ fontSize: "clamp(22px,3.8vw,28px)", fontWeight: 700, color: "#0B2E59", lineHeight: 1.32, margin: "14px 0 10px", textAlign: "center" }}>다음 실수를 하려는 순간,<br />이렇게 알려드려요</h2>
-      <p style={{ color: "#8B95A1", fontSize: 15.5, lineHeight: 1.65, margin: "0 auto 28px", maxWidth: 480, textAlign: "center" }}>복기에서 찾은 패턴을 학습한 예측기가 매수·급락 순간 맞춤 알림을 띄웁니다.</p>
-      <div style={{ maxWidth: 400, margin: "0 auto" }}>
-        <div style={{ background: "#E9EEF3", border: "1px solid #E5E8EB", borderRadius: 28, padding: "16px 12px 22px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, marginBottom: 12 }}>
-            <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#F5500A", animation: "wlpulse 1.4s ease infinite" }} />
-            <span style={{ fontSize: 12, color: "#0B2E59", fontWeight: 600 }}>실시간 모니터링 중</span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "0 4px" }}>
-            {alerts.length === 0 && <div style={{ textAlign: "center", color: "#8B95A1", fontSize: 14, padding: "30px 0" }}>이 사용자에 대한 실시간 알림이 없어요.</div>}
-            {alerts.map((a, i) => {
-              const color = DOMAIN[a.type].color; const high = (a.level || "") === "high" || a.risk >= 80;
-              return (
-                <div key={i} style={{ background: "#fff", borderRadius: 18, padding: 14, borderLeft: "4px solid " + color, boxShadow: "0 4px 16px rgba(0,0,0,.07)", animation: "wlslidein .45s ease both" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
-                    <div style={{ width: 22, height: 22, borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", background: "#F5500A" }}>
-                      <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><polyline points="3 7 9 13 13 9 21 17" /><polyline points="21 12 21 17 16 17" /></svg>
-                    </div>
-                    <span style={{ fontSize: 12, fontWeight: 600 }}>왜 잃었지?</span>
-                    <span style={{ fontSize: 12.5, color, fontWeight: 500 }}>· {a.kind}</span>
-                  </div>
-                  <div style={{ fontSize: 15.5, fontWeight: 700, lineHeight: 1.45, marginBottom: 5 }}>{a.title}</div>
-                  <div style={{ fontSize: 14, lineHeight: 1.6, color: "#4E5968" }}>{a.body}</div>
-                  <div style={{ marginTop: 11 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                      <span style={{ fontSize: 11.5, color: "#8B95A1" }}>위험도</span>
-                      <div style={{ flex: 1, height: 6, borderRadius: 4, background: "#EEF1F4", overflow: "hidden" }}><div style={{ width: a.risk + "%", height: "100%", background: high ? "#F5500A" : "#0B2E59" }} /></div>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: high ? "#F5500A" : "#0B2E59" }}>{a.risk}</span>
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                      {a.reasons.map((r, k) => <span key={k} style={{ fontSize: 11, color: "#4E5968", background: "#F2F4F6", borderRadius: 5, padding: "3px 7px" }}>{r}</span>)}
-                    </div>
-                  </div>
-                  {a.basis && <div style={{ display: "flex", gap: 6, marginTop: 10, paddingTop: 9, borderTop: "1px solid #F2F4F6", fontSize: 12.5, color: "#8B95A1", lineHeight: 1.5 }}>{a.basis}</div>}
-                </div>
-              );
-            })}
+      <h2 style={{ fontSize: "clamp(22px,3.8vw,28px)", fontWeight: 700, color: "#0B2E59", lineHeight: 1.32, margin: "14px 0 10px", textAlign: "center" }}>실시간으로 예측하고,<br />앱이 미리 잡아줘요</h2>
+      <p style={{ color: "#8B95A1", fontSize: 15.5, lineHeight: 1.65, margin: "0 auto 22px", maxWidth: 520, textAlign: "center" }}>미래에셋 앱을 쓰는 중 위험 순간이 오면 여기서 울려요.<br />종을 눌러 예측 알림을 확인하세요.</p>
+
+      <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 8 }}>
+        <Toggle id="stop" label="손절실패 시나리오" on={hasStop} />
+        <Toggle id="entry" label="진입오류 시나리오" on={hasEntry} />
+      </div>
+      <div style={{ textAlign: "center", fontSize: 12.5, color: opened ? "#B0B8C1" : accent, fontWeight: 600, marginBottom: 18, minHeight: 18 }}>
+        {opened ? "예측 알림이 도착했어요" : "🔔 앱 우상단의 종이 울리고 있어요 — 눌러보세요"}
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-start", gap: opened ? 22 : 0, transition: "gap .45s cubic-bezier(.4,0,.2,1)" }}>
+        <PhoneApp scenario={scenario} holdings={holdings} plan={entryPlan} highlightCode={stopHolding?.code} opened={opened} onBell={() => setOpened(true)} />
+        <div style={{ width: opened ? 392 : 0, opacity: opened ? 1 : 0, overflow: "hidden", transition: "width .45s cubic-bezier(.4,0,.2,1), opacity .4s ease" }}>
+          <div style={{ width: 392 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
+              <span style={{ width: 24, height: 24, borderRadius: 8, background: accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
+              </span>
+              <span style={{ fontSize: 13.5, fontWeight: 700, color: accent }}>{isStop ? "손절실패 징후 감지" : "진입오류 징후 감지"}</span>
+              <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#8B95A1" }}>6/25 11:00</span>
+            </div>
+            {opened && <div style={{ animation: "wlcardin .45s ease both" }}>{card}</div>}
           </div>
         </div>
       </div>

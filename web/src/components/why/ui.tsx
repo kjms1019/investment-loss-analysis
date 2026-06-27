@@ -1,6 +1,6 @@
 // why_ui 디자인 공용 상수 + 도메인 아이콘.
 import React from "react";
-import type { DomainId, TradeChart } from "@/lib/api";
+import type { DomainId, TradeChart, AlertChart } from "@/lib/api";
 
 export const DOMAIN: Record<DomainId, {
   name: string; def: string; psych: string; color: string; tint: string; light: string;
@@ -121,6 +121,54 @@ export function TradeMiniChart({ chart, color, tint }: { chart: TradeChart; colo
       {/* x축 날짜 */}
       <text x={X(ex.i)} y={H - 8} fontSize={8.5} fill="#8B95A1" textAnchor="middle">{md(ex.t)}</text>
       <text x={X(xt.i)} y={H - 8} fontSize={8.5} fill="#8B95A1" textAnchor="middle">{md(xt.t)}</text>
+    </svg>
+  );
+}
+
+// ── 실시간 알림 주식창 차트 ───────────────────────────────────────────────────
+// stop : 매수→손절선 돌파→현재가(보유 중 손절실패). entry : 매수 예정 시점.
+export function AlertMiniChart({ chart, color }: { chart: AlertChart; color: string }) {
+  const W = 320, H = 184, padL = 8, padR = 66, padT = 16, padB = 24;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const cs = chart.series.map((s) => s.c);
+  const n = cs.length;
+  if (n < 2) return null;
+  const extra = [chart.marker.price, ...(chart.stop != null ? [chart.stop] : []), ...(chart.entry ? [chart.entry.price] : [])];
+  let ymin = Math.min(...cs, ...extra), ymax = Math.max(...cs, ...extra);
+  const pad = (ymax - ymin) * 0.08 || 1; ymin -= pad; ymax += pad;
+  const X = (i: number) => padL + (i / (n - 1)) * plotW;
+  const Y = (p: number) => padT + (1 - (p - ymin) / (ymax - ymin)) * plotH;
+  const line = cs.map((c, i) => `${X(i).toFixed(1)},${Y(c).toFixed(1)}`).join(" ");
+  const area = `${padL},${(padT + plotH).toFixed(1)} ${line} ${X(n - 1).toFixed(1)},${(padT + plotH).toFixed(1)}`;
+  const mk = chart.marker;
+  const isStop = chart.kind === "stop";
+  const tint = isStop ? "#E7ECF4" : "#FEF1DF";
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block" }} preserveAspectRatio="xMidYMid meet">
+      {chart.stop != null && (
+        <g>
+          <line x1={padL} x2={padL + plotW} y1={Y(chart.stop)} y2={Y(chart.stop)} stroke="#E2574C" strokeWidth={1} strokeDasharray="4 3" />
+          <text x={padL + plotW + 4} y={Y(chart.stop) + 3} fontSize={9} fill="#E2574C">손절선</text>
+          <text x={padL + plotW + 4} y={Y(chart.stop) + 14} fontSize={9} fill="#E2574C">{wonK(chart.stop)}</text>
+        </g>
+      )}
+      <polygon points={area} fill={tint} opacity={0.6} />
+      <polyline points={line} fill="none" stroke={color} strokeWidth={1.6} strokeLinejoin="round" />
+      {chart.breach && (
+        <g>
+          <line x1={X(chart.breach.i)} x2={X(chart.breach.i)} y1={padT} y2={padT + plotH} stroke="#E2574C" strokeWidth={1} strokeDasharray="3 3" opacity={0.65} />
+          <text x={X(chart.breach.i)} y={padT - 5} fontSize={9} fill="#E2574C" textAnchor="middle" paintOrder="stroke" stroke="#fff" strokeWidth={3} strokeLinejoin="round">손절선 돌파</text>
+        </g>
+      )}
+      {chart.entry && (
+        <g>
+          <circle cx={X(chart.entry.i)} cy={Y(chart.entry.price)} r={3.6} fill="#fff" stroke={color} strokeWidth={2} />
+          <text x={X(chart.entry.i) + 2} y={Y(chart.entry.price) - 8} fontSize={9} fontWeight={600} fill="#8B95A1" textAnchor="start" paintOrder="stroke" stroke="#fff" strokeWidth={3} strokeLinejoin="round">매수 {wonK(chart.entry.price)}</text>
+        </g>
+      )}
+      {/* 현재가(또는 매수 예정점) */}
+      <circle cx={X(mk.i)} cy={Y(mk.price)} r={4.6} fill={isStop ? "#E2574C" : color} stroke="#fff" strokeWidth={1.6} />
+      <text x={X(mk.i)} y={Y(mk.price) + (isStop ? 16 : -10)} fontSize={9.5} fontWeight={700} fill={isStop ? "#E2574C" : color} textAnchor="end" paintOrder="stroke" stroke="#fff" strokeWidth={3.2} strokeLinejoin="round">{isStop ? "현재" : "매수 예정"} {wonK(mk.price)}</text>
     </svg>
   );
 }
