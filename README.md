@@ -129,10 +129,26 @@ Release zip을 `analysis/data/`에 풀면 `analysis/data/min1/{code}.parquet` �
 
 > ⚠️ **`analysis/data/` 전체가 gitignore다 — `git pull`로 따라오지 않는다.** min1 parquet뿐
 > 아니라 분석 산출 DB(`orchestrator.sqlite3`·`user_profiles.sqlite3`)와 화면용 차트 캐시
-> (`ui_trade_charts.sqlite3`)도 **각자 PC에서 생성**해야 한다. 새 PC에서 웹 데모를 띄울 때는
-> [web/README.md](web/README.md#L37)의 **실행 1) 백엔드** 순서(백필 → 차트 빌드 → uvicorn)를
-> 반드시 거칠 것. 데스크탑은 되는데 노트북은 차트가 비거나 탭이 "불러오는중"에서 멈춘다면
-> 십중팔구 이 단계를 안 거쳤거나 백엔드를 옛 코드로 띄운 것이다.
+> (`ui_trade_charts.sqlite3`)도 **각자 PC에서 생성**해야 한다. 데스크탑은 되는데 노트북은
+> 차트가 비거나 탭이 "불러오는중"에서 멈춘다면 십중팔구 이 단계를 안 거쳤거나 백엔드를
+> 옛 코드로 띄운 것이다.
+
+### 데모 DB 빠른 셋업 (백필·차트빌드 생략)
+
+분석 산출 DB 3종을 `demo_db` 릴리스에 묶어 올려뒀다(109KB). 받아서 풀면 백필·차트빌드 없이
+바로 거래별 탭까지 뜬다.
+
+```bash
+# 저장소 루트에서
+curl -L -o mirae_demo_db.zip \
+  https://github.com/kjms1019/mirae_asset_agent/releases/download/demo_db/mirae_demo_db.zip
+unzip -o mirae_demo_db.zip -d analysis/data/
+# → analysis/data/{orchestrator,user_profiles,ui_trade_charts}.sqlite3
+```
+
+> 단, **실시간 알림·보유 점검·전체 거래 차트**는 런타임에 min1 parquet을 직접 읽으므로
+> 완전한 데모는 별도 min1 Release까지 받아야 한다(거래별 탭은 위 DB만으로 동작).
+> DB를 새로 만들고 싶으면 [web/README.md](web/README.md#L37)의 백필→차트빌드 순서를 따른다.
 
 ## 검증/오프라인 (LLM 토큰 0)
 

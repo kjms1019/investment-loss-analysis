@@ -41,6 +41,13 @@
 ```bash
 pip install -r analysis/requirements.txt
 
+# ── (A) 데모 DB를 릴리스에서 받기 — 백필·차트빌드 생략하는 가장 빠른 길 ──
+#    저장소 루트에서 실행. 거래별 탭까지 바로 동작.
+curl -L -o mirae_demo_db.zip \
+  https://github.com/kjms1019/mirae_asset_agent/releases/download/demo_db/mirae_demo_db.zip
+unzip -o mirae_demo_db.zip -d analysis/data/
+
+# ── (B) 또는 직접 생성 ──
 # 데모 DB 백필(처음 1회) — 사용자 프로파일·분석결과 적재
 python -c "from analysis.orchestrator.demo_alert_runner import backfill_user_profiles; \
 backfill_user_profiles('tests/fixtures/demo_users_all_data.final_3sheets.xlsx')"
@@ -49,6 +56,7 @@ backfill_user_profiles('tests/fixtures/demo_users_all_data.final_3sheets.xlsx')"
 # 출력의 "N건"이 0이면 차트가 하나도 안 들어간 것 — 거래별 탭이 빈다(아래 트러블슈팅).
 python -m analysis.ui.build_trade_charts
 
+# ── (A)/(B) 공통: 백엔드 기동 ──
 uvicorn analysis.api.main:app --port 8000 --reload   # http://127.0.0.1:8000/docs
 ```
 
