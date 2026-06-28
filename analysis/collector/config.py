@@ -6,11 +6,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from analysis.common.paths import CACHE_DIR, DATA_DIR, MIN1_DIR  # 데이터 루트 단일 소스(MIRAE_DATA_ROOT)
+
 # analysis/collector/config.py → 프로젝트 루트는 두 단계 위
 ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = ROOT / "analysis" / "data"
-MIN1_DIR = DATA_DIR / "min1"          # 종목별 1분봉 parquet 저장 위치
-CACHE_DIR = DATA_DIR / ".cache"       # 토큰/종목리스트 캐시 (git 미추적)
 
 load_dotenv(ROOT / ".env")
 

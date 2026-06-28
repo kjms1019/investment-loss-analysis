@@ -1,0 +1,18 @@
+[
+  {
+    "scenario": "all",
+    "label": "혼합 (현실적)"
+  },
+  {
+    "scenario": "revenge",
+    "label": "리벤지 트레이딩"
+  },
+  {
+    "scenario": "overtrading",
+    "label": "과매매"
+  },
+  {
+    "scenario": "disposition",
+    "label": "처분효과"
+  }
+]

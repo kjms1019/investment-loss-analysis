@@ -1,0 +1,76 @@
+{
+  "scenario": "disposition",
+  "label": "처분효과",
+  "screening": {
+    "closed": 13,
+    "tier1": 1,
+    "tier2": 1,
+    "market_driven_excluded": 1,
+    "selected": 2
+  },
+  "routing": {
+    "revenge": 0,
+    "overtrading": 0,
+    "disposition": 1,
+    "other": 1
+  },
+  "losses": [
+    {
+      "code": "000020",
+      "name": "동화약품",
+      "entry_time": "2026-04-10 10:30:00",
+      "return_pct": -0.88,
+      "r_mkt_pct": 9.31,
+      "alpha_pct": -9.98,
+      "tier": 1,
+      "holding_min": 44550.0,
+      "dominant": "disposition",
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 2.0,
+          "evidence": [
+            "진입일에 4건 매매 = 평소 하루(2건)의 2.0배(과매매 군집)"
+          ]
+        },
+        "disposition": {
+          "score": 3.0,
+          "evidence": [
+            "평균 수익거래(83분)의 539.7배 보유(손실을 오래 끌었음)",
+            "이 손실 보유 중 수익 종목 10건 익절(이익은 빨리, 손실은 길게)"
+          ]
+        }
+      },
+      "correction": "진입과 동시에 손절·익절 가격을 같이 적어두고 기계적으로 집행하세요. 손실은 빨리 끊고 수익은 끌고 가도록 비대칭을 교정합니다."
+    },
+    {
+      "code": "000100",
+      "name": "유한양행",
+      "entry_time": "2026-04-23 13:07:00",
+      "return_pct": 0.44,
+      "r_mkt_pct": 0.64,
+      "alpha_pct": -0.01,
+      "tier": 2,
+      "holding_min": 104.0,
+      "dominant": null,
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": ""
+    }
+  ]
+}

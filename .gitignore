@@ -24,6 +24,7 @@ __pycache__/
 *.pyo
 *.pyd
 *.egg-info/
+*.log
 dist/
 build/
 .mypy_cache/

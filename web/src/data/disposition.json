@@ -1,0 +1,284 @@
+{
+  "findings": [
+    {
+      "type": "revenge",
+      "label": "리벤지 트레이딩",
+      "detected": false,
+      "severity": "none",
+      "metrics": {
+        "signal_count": 0,
+        "strong_count": 0,
+        "moderate_count": 0,
+        "weak_count": 0,
+        "window_min": 30
+      },
+      "evidence": [],
+      "reference": "리벤지 트레이딩: 손실 직후 충동적 재진입 + 포지션 확대 (행동재무 문헌)"
+    },
+    {
+      "type": "overtrading",
+      "label": "과매매",
+      "detected": true,
+      "severity": "moderate",
+      "metrics": {
+        "annual_turnover": 27.962,
+        "annual_turnover_pct": 2796.2,
+        "threshold_pct": 250.0,
+        "total_trades": 28,
+        "period_days": 32.9,
+        "total_buy_value": 45711504,
+        "peak_deployed_capital": 18119154,
+        "median_monthly_trades": 14.0,
+        "busiest_month": "2026-04",
+        "busiest_month_trades": 27,
+        "freq_multiple": 1.93
+      },
+      "evidence": [
+        "연 환산 회전율 ≈ 2796% (절대 임계 250% 초과)",
+        "총 거래 28건 / 33일, 월 거래 중앙값 14건"
+      ],
+      "reference": "Barber & Odean (2000): 연 회전율 ↑ → 순수익 잠식. 과매매 그룹 ≈ 258%"
+    },
+    {
+      "type": "disposition",
+      "label": "처분효과",
+      "detected": true,
+      "severity": "strong",
+      "metrics": {
+        "pgr": 0.367,
+        "plr": 0.118,
+        "pgr_minus_plr": 0.249,
+        "realized_gain": 11,
+        "realized_loss": 2,
+        "paper_gain": 19,
+        "paper_loss": 15,
+        "avg_win_hold_min": 82.5,
+        "avg_loss_hold_min": 22280.5
+      },
+      "evidence": [
+        "PGR(이익실현 성향) 0.37 vs PLR(손실실현 성향) 0.12 → 차이 +0.25 (처분효과 양(+))",
+        "평균 보유: 수익 83분 vs 손실 22280분 (손실을 269.9배 오래 보유)"
+      ],
+      "reference": "Shefrin & Statman (1985) 명명, Odean (1998) PGR/PLR 측정법"
+    }
+  ],
+  "diagnosis": {
+    "engine": "template",
+    "headline": "이번 기간 거래에서 처분효과(강), 과매매(중) 패턴이 관찰됩니다.",
+    "body": "**리벤지 트레이딩**: 유의한 신호 없음.\n**과매매** (중): 연 환산 회전율 ≈ 2796% (절대 임계 250% 초과) / 총 거래 28건 / 33일, 월 거래 중앙값 14건\n  → 교정: 월 거래 건수 상한(예: 개인 중앙값 수준)을 사전에 정하고, 진입 전 '이 거래가 계획된 것인가'를 1줄로 적는 체크를 도입하세요.\n**처분효과** (강): PGR(이익실현 성향) 0.37 vs PLR(손실실현 성향) 0.12 → 차이 +0.25 (처분효과 양(+)) / 평균 보유: 수익 83분 vs 손실 22280분 (손실을 269.9배 오래 보유)\n  → 교정: 진입과 동시에 손절·익절 가격을 같이 적어두고 기계적으로 집행하세요. 손실은 빨리 끊고 수익은 끌고 가도록 비대칭을 교정합니다.",
+    "per_type": {
+      "revenge": {
+        "label": "리벤지 트레이딩",
+        "severity": "none",
+        "summary": "**리벤지 트레이딩**: 유의한 신호 없음.",
+        "correction": ""
+      },
+      "overtrading": {
+        "label": "과매매",
+        "severity": "moderate",
+        "summary": "**과매매** (중): 연 환산 회전율 ≈ 2796% (절대 임계 250% 초과) / 총 거래 28건 / 33일, 월 거래 중앙값 14건",
+        "correction": "월 거래 건수 상한(예: 개인 중앙값 수준)을 사전에 정하고, 진입 전 '이 거래가 계획된 것인가'를 1줄로 적는 체크를 도입하세요."
+      },
+      "disposition": {
+        "label": "처분효과",
+        "severity": "strong",
+        "summary": "**처분효과** (강): PGR(이익실현 성향) 0.37 vs PLR(손실실현 성향) 0.12 → 차이 +0.25 (처분효과 양(+)) / 평균 보유: 수익 83분 vs 손실 22280분 (손실을 269.9배 오래 보유)",
+        "correction": "진입과 동시에 손절·익절 가격을 같이 적어두고 기계적으로 집행하세요. 손실은 빨리 끊고 수익은 끌고 가도록 비대칭을 교정합니다."
+      }
+    }
+  },
+  "scenario": "disposition",
+  "label": "처분효과",
+  "summary": {
+    "trade_count": 28,
+    "period_start": "2026-04-08",
+    "period_end": "2026-05-11",
+    "cycle_count": 15,
+    "closed_cycle_count": 13,
+    "win_count": 11,
+    "loss_count": 2,
+    "total_realized_pnl": 183644
+  },
+  "cycles": [
+    {
+      "code": "000070",
+      "name": "삼양홀딩스",
+      "entry_time": "2026-04-08 10:39:00",
+      "exit_time": "2026-04-08 12:07:00",
+      "invested": 2511800,
+      "realized_pnl": 21523.0,
+      "return_pct": 0.86,
+      "holding_min": 88.0,
+      "closed": true,
+      "is_win": true
+    },
+    {
+      "code": "000040",
+      "name": "KR모터스",
+      "entry_time": "2026-04-09 12:29:00",
+      "exit_time": null,
+      "invested": 5000244,
+      "realized_pnl": 0.0,
+      "return_pct": 0.0,
+      "holding_min": null,
+      "closed": false,
+      "is_win": false
+    },
+    {
+      "code": "000080",
+      "name": "하이트진로",
+      "entry_time": "2026-04-10 10:15:00",
+      "exit_time": "2026-04-10 13:16:00",
+      "invested": 2502440,
+      "realized_pnl": 16851.0,
+      "return_pct": 0.67,
+      "holding_min": 181.0,
+      "closed": true,
+      "is_win": true
+    },
+    {
+      "code": "000020",
+      "name": "동화약품",
+      "entry_time": "2026-04-10 10:30:00",
+      "exit_time": "2026-05-11 09:00:00",
+      "invested": 4999860,
+      "realized_pnl": -43772.0,
+      "return_pct": -0.88,
+      "holding_min": 44550.0,
+      "closed": true,
+      "is_win": false
+    },
+    {
+      "code": "000050",
+      "name": "경방",
+      "entry_time": "2026-04-10 15:07:00",
+      "exit_time": null,
+      "invested": 4999050,
+      "realized_pnl": 0.0,
+      "return_pct": 0.0,
+      "holding_min": null,
+      "closed": false,
+      "is_win": false
+    },
+    {
+      "code": "000100",
+      "name": "유한양행",
+      "entry_time": "2026-04-13 09:12:00",
+      "exit_time": "2026-04-13 10:56:00",
+      "invested": 2462400,
+      "realized_pnl": 16632.0,
+      "return_pct": 0.68,
+      "holding_min": 104.0,
+      "closed": true,
+      "is_win": true
+    },
+    {
+      "code": "000120",
+      "name": "CJ대한통운",
+      "entry_time": "2026-04-14 10:58:00",
+      "exit_time": "2026-04-14 12:57:00",
+      "invested": 2455200,
+      "realized_pnl": 21437.0,
+      "return_pct": 0.87,
+      "holding_min": 119.0,
+      "closed": true,
+      "is_win": true
+    },
+    {
+      "code": "000150",
+      "name": "두산",
+      "entry_time": "2026-04-17 10:04:00",
+      "exit_time": "2026-04-17 11:06:00",
+      "invested": 2590000,
+      "realized_pnl": 28752.0,
+      "return_pct": 1.11,
+      "holding_min": 62.0,
+      "closed": true,
+      "is_win": true
+    },
+    {
+      "code": "000070",
+      "name": "삼양홀딩스",
+      "entry_time": "2026-04-20 09:05:00",
+      "exit_time": "2026-04-20 09:26:00",
+      "invested": 2469600,
+      "realized_pnl": 23803.0,
+      "return_pct": 0.96,
+      "holding_min": 21.0,
+      "closed": true,
+      "is_win": true
+    },
+    {
+      "code": "000080",
+      "name": "하이트진로",
+      "entry_time": "2026-04-22 09:10:00",
+      "exit_time": "2026-04-22 09:32:00",
+      "invested": 2506350,
+      "realized_pnl": 18460.0,
+      "return_pct": 0.74,
+      "holding_min": 22.0,
+      "closed": true,
+      "is_win": true
+    },
+    {
+      "code": "000100",
+      "name": "유한양행",
+      "entry_time": "2026-04-23 13:07:00",
+      "exit_time": "2026-04-23 14:51:00",
+      "invested": 2540700,
+      "realized_pnl": 11086.0,
+      "return_pct": 0.44,
+      "holding_min": 104.0,
+      "closed": true,
+      "is_win": true
+    },
+    {
+      "code": "000120",
+      "name": "CJ대한통운",
+      "entry_time": "2026-04-24 11:55:00",
+      "exit_time": "2026-04-24 14:52:00",
+      "invested": 2525000,
+      "realized_pnl": 27385.0,
+      "return_pct": 1.08,
+      "holding_min": 177.0,
+      "closed": true,
+      "is_win": true
+    },
+    {
+      "code": "000150",
+      "name": "두산",
+      "entry_time": "2026-04-28 09:30:00",
+      "exit_time": "2026-04-28 09:44:00",
+      "invested": 3120000,
+      "realized_pnl": 25696.0,
+      "return_pct": 0.82,
+      "holding_min": 14.0,
+      "closed": true,
+      "is_win": true
+    },
+    {
+      "code": "000070",
+      "name": "삼양홀딩스",
+      "entry_time": "2026-04-29 09:57:00",
+      "exit_time": "2026-04-29 10:13:00",
+      "invested": 2530800,
+      "realized_pnl": 20787.0,
+      "return_pct": 0.82,
+      "holding_min": 16.0,
+      "closed": true,
+      "is_win": true
+    },
+    {
+      "code": "000080",
+      "name": "하이트진로",
+      "entry_time": "2026-04-30 15:19:00",
+      "exit_time": "2026-04-30 15:30:00",
+      "invested": 2498060,
+      "realized_pnl": -4996.0,
+      "return_pct": -0.2,
+      "holding_min": 11.0,
+      "closed": true,
+      "is_win": false
+    }
+  ]
+}

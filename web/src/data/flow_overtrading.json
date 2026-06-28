@@ -1,0 +1,293 @@
+{
+  "scenario": "overtrading",
+  "label": "과매매",
+  "screening": {
+    "closed": 25,
+    "tier1": 10,
+    "tier2": 0,
+    "market_driven_excluded": 8,
+    "selected": 10
+  },
+  "routing": {
+    "revenge": 0,
+    "overtrading": 5,
+    "disposition": 1,
+    "other": 4
+  },
+  "losses": [
+    {
+      "code": "000040",
+      "name": "KR모터스",
+      "entry_time": "2026-06-04 09:00:00",
+      "return_pct": -1.08,
+      "r_mkt_pct": 0.87,
+      "alpha_pct": -2.05,
+      "tier": 1,
+      "holding_min": 4.0,
+      "dominant": "overtrading",
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 2.2,
+          "evidence": [
+            "진입일에 10건 매매 = 평소 하루(4건)의 2.5배(과매매 군집)"
+          ]
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": "월 거래 건수 상한(예: 개인 중앙값 수준)을 사전에 정하고, 진입 전 '이 거래가 계획된 것인가'를 1줄로 적는 체크를 도입하세요."
+    },
+    {
+      "code": "000100",
+      "name": "유한양행",
+      "entry_time": "2026-06-04 09:00:00",
+      "return_pct": -0.93,
+      "r_mkt_pct": 0.78,
+      "alpha_pct": -1.51,
+      "tier": 1,
+      "holding_min": 14.0,
+      "dominant": "overtrading",
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 2.2,
+          "evidence": [
+            "진입일에 10건 매매 = 평소 하루(4건)의 2.5배(과매매 군집)"
+          ]
+        },
+        "disposition": {
+          "score": 1.5,
+          "evidence": [
+            "평균 수익거래(9분)의 1.6배 보유(손실을 오래 끌었음)"
+          ]
+        }
+      },
+      "correction": "월 거래 건수 상한(예: 개인 중앙값 수준)을 사전에 정하고, 진입 전 '이 거래가 계획된 것인가'를 1줄로 적는 체크를 도입하세요."
+    },
+    {
+      "code": "000070",
+      "name": "삼양홀딩스",
+      "entry_time": "2026-06-05 09:37:00",
+      "return_pct": -0.94,
+      "r_mkt_pct": -0.29,
+      "alpha_pct": -0.45,
+      "tier": 1,
+      "holding_min": 12.0,
+      "dominant": null,
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": ""
+    },
+    {
+      "code": "000040",
+      "name": "KR모터스",
+      "entry_time": "2026-06-11 11:46:00",
+      "return_pct": -0.49,
+      "r_mkt_pct": 0.12,
+      "alpha_pct": -0.41,
+      "tier": 1,
+      "holding_min": 4.0,
+      "dominant": null,
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": ""
+    },
+    {
+      "code": "000120",
+      "name": "CJ대한통운",
+      "entry_time": "2026-06-12 11:48:00",
+      "return_pct": -0.56,
+      "r_mkt_pct": -0.03,
+      "alpha_pct": -0.33,
+      "tier": 1,
+      "holding_min": 14.0,
+      "dominant": "disposition",
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 1.5,
+          "evidence": [
+            "평균 수익거래(9분)의 1.6배 보유(손실을 오래 끌었음)"
+          ]
+        }
+      },
+      "correction": "진입과 동시에 손절·익절 가격을 같이 적어두고 기계적으로 집행하세요. 손실은 빨리 끊고 수익은 끌고 가도록 비대칭을 교정합니다."
+    },
+    {
+      "code": "000100",
+      "name": "유한양행",
+      "entry_time": "2026-06-11 09:58:00",
+      "return_pct": -0.33,
+      "r_mkt_pct": 0.08,
+      "alpha_pct": -0.21,
+      "tier": 1,
+      "holding_min": 4.0,
+      "dominant": null,
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": ""
+    },
+    {
+      "code": "000070",
+      "name": "삼양홀딩스",
+      "entry_time": "2026-06-09 12:21:00",
+      "return_pct": -0.38,
+      "r_mkt_pct": 0.0,
+      "alpha_pct": -0.18,
+      "tier": 1,
+      "holding_min": 1.0,
+      "dominant": null,
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": ""
+    },
+    {
+      "code": "000020",
+      "name": "동화약품",
+      "entry_time": "2026-06-02 11:19:00",
+      "return_pct": -0.38,
+      "r_mkt_pct": -0.05,
+      "alpha_pct": -0.13,
+      "tier": 1,
+      "holding_min": 8.0,
+      "dominant": "overtrading",
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 1.0,
+          "evidence": [
+            "진입일에 6건 매매(거래 폭주일)"
+          ]
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": "월 거래 건수 상한(예: 개인 중앙값 수준)을 사전에 정하고, 진입 전 '이 거래가 계획된 것인가'를 1줄로 적는 체크를 도입하세요."
+    },
+    {
+      "code": "000120",
+      "name": "CJ대한통운",
+      "entry_time": "2026-06-04 13:39:00",
+      "return_pct": -0.32,
+      "r_mkt_pct": -0.01,
+      "alpha_pct": -0.11,
+      "tier": 1,
+      "holding_min": 2.0,
+      "dominant": "overtrading",
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 2.2,
+          "evidence": [
+            "진입일에 10건 매매 = 평소 하루(4건)의 2.5배(과매매 군집)"
+          ]
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": "월 거래 건수 상한(예: 개인 중앙값 수준)을 사전에 정하고, 진입 전 '이 거래가 계획된 것인가'를 1줄로 적는 체크를 도입하세요."
+    },
+    {
+      "code": "000120",
+      "name": "CJ대한통운",
+      "entry_time": "2026-06-08 13:13:00",
+      "return_pct": -0.33,
+      "r_mkt_pct": -0.13,
+      "alpha_pct": -0.0,
+      "tier": 1,
+      "holding_min": 11.0,
+      "dominant": "overtrading",
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 2.5,
+          "evidence": [
+            "진입일에 12건 매매 = 평소 하루(4건)의 3.0배(과매매 군집)"
+          ]
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": "월 거래 건수 상한(예: 개인 중앙값 수준)을 사전에 정하고, 진입 전 '이 거래가 계획된 것인가'를 1줄로 적는 체크를 도입하세요."
+    }
+  ]
+}

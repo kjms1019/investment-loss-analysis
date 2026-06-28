@@ -1,0 +1,241 @@
+{
+  "scenario": "revenge",
+  "label": "리벤지",
+  "screening": {
+    "closed": 8,
+    "tier1": 6,
+    "tier2": 2,
+    "market_driven_excluded": 0,
+    "selected": 8
+  },
+  "routing": {
+    "revenge": 4,
+    "overtrading": 0,
+    "disposition": 0,
+    "other": 4
+  },
+  "losses": [
+    {
+      "code": "000040",
+      "name": "KR모터스",
+      "entry_time": "2026-05-13 09:40:00",
+      "return_pct": -1.93,
+      "r_mkt_pct": -0.01,
+      "alpha_pct": -1.73,
+      "tier": 1,
+      "holding_min": 18.0,
+      "dominant": null,
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": ""
+    },
+    {
+      "code": "000070",
+      "name": "삼양홀딩스",
+      "entry_time": "2026-05-11 10:04:00",
+      "return_pct": -0.97,
+      "r_mkt_pct": 0.41,
+      "alpha_pct": -1.18,
+      "tier": 1,
+      "holding_min": 24.0,
+      "dominant": "revenge",
+      "signals": {
+        "revenge": {
+          "score": 3.0,
+          "evidence": [
+            "직전 동화약품 -0.9% 손절 후 13분 만에 재진입",
+            "투입금 2.0배 확대(포지션 키움)",
+            "그 재진입도 재손실 → 전형적 리벤지"
+          ]
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": "손절 직후 최소 30분(권장: 당일 종가까지) 신규 진입을 잠그는 '쿨다운 룰'을 두세요. 만회 충동이 가장 강한 구간을 물리적으로 차단합니다."
+    },
+    {
+      "code": "000020",
+      "name": "동화약품",
+      "entry_time": "2026-05-11 09:40:00",
+      "return_pct": -0.88,
+      "r_mkt_pct": -0.0,
+      "alpha_pct": -0.67,
+      "tier": 1,
+      "holding_min": 11.0,
+      "dominant": null,
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": ""
+    },
+    {
+      "code": "000070",
+      "name": "삼양홀딩스",
+      "entry_time": "2026-05-18 09:00:00",
+      "return_pct": -1.5,
+      "r_mkt_pct": -0.83,
+      "alpha_pct": -0.47,
+      "tier": 1,
+      "holding_min": 2.0,
+      "dominant": null,
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": ""
+    },
+    {
+      "code": "000050",
+      "name": "경방",
+      "entry_time": "2026-05-15 09:40:00",
+      "return_pct": -1.23,
+      "r_mkt_pct": -0.58,
+      "alpha_pct": -0.45,
+      "tier": 1,
+      "holding_min": 30.0,
+      "dominant": null,
+      "signals": {
+        "revenge": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": ""
+    },
+    {
+      "code": "000100",
+      "name": "유한양행",
+      "entry_time": "2026-05-15 10:24:00",
+      "return_pct": -1.22,
+      "r_mkt_pct": -0.6,
+      "alpha_pct": -0.42,
+      "tier": 1,
+      "holding_min": 33.0,
+      "dominant": "revenge",
+      "signals": {
+        "revenge": {
+          "score": 3.0,
+          "evidence": [
+            "직전 경방 -1.2% 손절 후 14분 만에 재진입",
+            "투입금 2.0배 확대(포지션 키움)",
+            "그 재진입도 재손실 → 전형적 리벤지"
+          ]
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": "손절 직후 최소 30분(권장: 당일 종가까지) 신규 진입을 잠그는 '쿨다운 룰'을 두세요. 만회 충동이 가장 강한 구간을 물리적으로 차단합니다."
+    },
+    {
+      "code": "000120",
+      "name": "CJ대한통운",
+      "entry_time": "2026-05-18 09:20:00",
+      "return_pct": 0.24,
+      "r_mkt_pct": 1.11,
+      "alpha_pct": -0.67,
+      "tier": 2,
+      "holding_min": 42.0,
+      "dominant": "revenge",
+      "signals": {
+        "revenge": {
+          "score": 2.0,
+          "evidence": [
+            "직전 삼양홀딩스 -1.5% 손절 후 18분 만에 재진입",
+            "투입금 2.0배 확대(포지션 키움)"
+          ]
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": "손절 직후 최소 30분(권장: 당일 종가까지) 신규 진입을 잠그는 '쿨다운 룰'을 두세요. 만회 충동이 가장 강한 구간을 물리적으로 차단합니다."
+    },
+    {
+      "code": "000080",
+      "name": "하이트진로",
+      "entry_time": "2026-05-13 10:08:00",
+      "return_pct": 0.41,
+      "r_mkt_pct": 0.88,
+      "alpha_pct": -0.27,
+      "tier": 2,
+      "holding_min": 52.0,
+      "dominant": "revenge",
+      "signals": {
+        "revenge": {
+          "score": 2.0,
+          "evidence": [
+            "직전 KR모터스 -1.9% 손절 후 10분 만에 재진입",
+            "투입금 2.0배 확대(포지션 키움)"
+          ]
+        },
+        "overtrading": {
+          "score": 0.0,
+          "evidence": []
+        },
+        "disposition": {
+          "score": 0.0,
+          "evidence": []
+        }
+      },
+      "correction": "손절 직후 최소 30분(권장: 당일 종가까지) 신규 진입을 잠그는 '쿨다운 룰'을 두세요. 만회 충동이 가장 강한 구간을 물리적으로 차단합니다."
+    }
+  ]
+}

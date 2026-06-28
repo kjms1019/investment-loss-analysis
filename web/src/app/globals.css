@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: #ffffff;
+  color: #191f28;
+  -webkit-font-smoothing: antialiased;
+  word-break: keep-all;
+  font-family: Pretendard, system-ui, sans-serif;
+}
+
+input, select { font-family: inherit; }
+input::placeholder { color: #b0b8c1; }
+input:focus, select:focus { outline: none; border-color: #0b2e59; }
+button { font-family: inherit; }
+
+::-webkit-scrollbar { height: 8px; width: 8px; }
+::-webkit-scrollbar-thumb { background: #e5e8eb; border-radius: 8px; }
+
+@keyframes wlspin { to { transform: rotate(360deg); } }
+@keyframes wlpulse { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
+@keyframes wlslidein { 0% { opacity: 0; transform: translateY(10px) scale(.98); } 100% { opacity: 1; transform: none; } }
+@keyframes wlbell { 0%,100% { transform: rotate(0); } 15% { transform: rotate(16deg); } 30% { transform: rotate(-14deg); } 45% { transform: rotate(10deg); } 60% { transform: rotate(-7deg); } 75% { transform: rotate(3deg); } }
+@keyframes wlcardin { 0% { opacity: 0; transform: translateX(26px) scale(.97); } 100% { opacity: 1; transform: none; } }
+@keyframes wlpop { 0% { transform: scale(0); } 70% { transform: scale(1.25); } 100% { transform: scale(1); } }
