@@ -5,6 +5,7 @@ import {
   api, type Alert, type AllTrade, type Dashboard, type Trade, type UserItem, type DomainId, type Disposition, type HoldingsResp, type Holding,
 } from "@/lib/api";
 import { DOMAIN, SEV_LABEL, DomainIcon, Logo, Section, LossBars, TradeMiniChart, AlertMiniChart } from "@/components/why/ui";
+import { archSet } from "@/lib/archChannel";
 
 const ROUTES = ["login", "consent", "upload", "analyze", "dashboard", "trades", "profile", "alerts"] as const;
 type Screen = (typeof ROUTES)[number];
@@ -86,11 +87,46 @@ export default function Home() {
     if (screen !== "analyze") return;
     if (analyzedRef.current) return;
     setProgressStep(0); setShowResult(false);
-    const STEP_MS = 1500; // 사람이 단계 문구를 읽을 시간 확보
+    const STEP_MS = 2400; // 사람이 단계 문구를 읽고 아키텍처 색인을 따라올 시간 확보
     const ts = [1, 2, 3].map((n) => setTimeout(() => setProgressStep(n), STEP_MS * n));
     ts.push(setTimeout(() => { setProgressStep(4); analyzedRef.current = true; }, STEP_MS * 4));
     return () => ts.forEach(clearTimeout);
   }, [screen]);
+
+  // ── 아키텍처 페이지(/architecture) 실시간 연동: 화면·단계에 맞는 노드를 broadcast ──
+  useEffect(() => {
+    switch (screen) {
+      case "login":
+      case "consent":
+        archSet([], "대기 중 — 데모를 시작하면 켜집니다"); break;
+      case "upload":
+        archSet(["a-input"], "① 거래내역 입력 — CSV 업로드"); break;
+      case "analyze":
+        if (showResult) { archSet(["a-route"], "③ 빈도 1위 = 금액 1위? — 라우팅 판단"); }
+        else {
+          const m: [string[], string][] = [
+            [["a-orch", "a-db1"], "거래내역 파싱 → 분석 DB 적재"],
+            [["a-db1"], "손실 선별 (초과수익 α)"],
+            // 자동 파이프라인은 '분류기까지만' 색인한다. 라우팅 다이아몬드(a-route)는
+            // 사용자가 빈도/금액을 '선택'하는 순간에만 깜빡이고, 도메인 에이전트(a-agent)는
+            // 선택을 마친 뒤에만 켜진다.
+            [["a-clf"], "2-way 분류 — 건별 진입오류·손절실패"],
+            [["a-clf"], "건별 분류 결과 정리"],
+          ];
+          const [nodes, note] = m[Math.min(progressStep, 3)];
+          archSet(nodes, note);
+        }
+        break;
+      case "dashboard":
+        archSet(["a-agent"], "④ 도메인 에이전트 — 도메인별 진단"); break;
+      case "trades":
+        archSet(["a-agent"], "④ 거래별 설명 — 도메인 에이전트"); break;
+      case "profile":
+        archSet(["a-finaldb", "a-report"], "⑤ 최종 DB → ⑥ 진단 리포트 (성향)"); break;
+      case "alerts":
+        archSet(["s-track", "s-feat", "s-pred"], "솔루션단 · 실시간 예측 추적"); break;
+    }
+  }, [screen, progressStep, showResult]);
 
   const showNav = !(screen === "login" || screen === "consent");
   const curUserName = users.find((u) => u.id === user)?.name || "";
@@ -271,6 +307,13 @@ function Analyze({ step, done, trades, all, onSeeResult, onGo }: {
   const [pick, setPick] = useState<"freq" | "amount" | null>(null);
   const [calling, setCalling] = useState(false); // 선택 후 '분석 에이전트 호출' 카드 표시
   useEffect(() => { if (!done) { setPick(null); setCalling(false); } }, [done]);
+  // 아키텍처 연동: 완료 화면의 선택/호출 단계
+  useEffect(() => {
+    if (!done) return;
+    if (calling) archSet(["a-agent"], "④ 도메인 에이전트 호출");
+    else if (pick) archSet(["a-route", "a-userpick"], "사용자 선택 — 무엇부터 볼지");
+    else archSet(["a-route"], "③ 빈도 1위 = 금액 1위? — 라우팅 판단");
+  }, [done, pick, calling]);
 
   // 전체 거래 차트 — 단계가 진행될수록 '색인'이 점진적으로 들어간다.
   //  step≤1(파싱): 전체 거래 무색  → step2(손실 선별): 본인 탓 손실만 진하게  → step≥3(라우팅): 도메인 색.
@@ -498,6 +541,11 @@ function TradesView({ trades, filterType, setFilterType, filterSev, setFilterSev
 }) {
   const [asking, setAsking] = useState(false);
   const shouldAsk = other.count > 0 && !other.seen; // 안 본 다른 도메인이 거래가 있으면 물어본다
+  // 아키텍처 연동: '다른 오류도 분석?' 반복 프롬프트가 뜨면 루프 노드를 함께 점등
+  useEffect(() => {
+    if (asking) archSet(["a-loop"], "다른 오류도 분석? — 반복 여부 묻기");
+    else archSet(["a-agent"], "④ 거래별 설명 — 도메인 에이전트");
+  }, [asking]);
   const filtered = trades.filter((t) => (filterType === "all" || t.type === filterType) && (filterSev === "all" || t.sev === filterSev));
   const active = selTrade != null && selTrade < filtered.length ? selTrade : 0;
   const t = filtered[active];
@@ -1012,6 +1060,14 @@ function AlertsView({ data }: { data: HoldingsResp | null }) {
   // 사용자/시나리오 바뀌면 닫고, 가능한 시나리오로 기본 전환
   useEffect(() => { setOpened(false); }, [scenario, data?.user_id]);
   useEffect(() => { if (!hasStop && hasEntry) setScenario("entry"); }, [hasStop, hasEntry]);
+  // 아키텍처 연동(2단계로 또렷하게):
+  //  · 감시 중(종 울리는 중) → 실시간 추적 → 단일 예측기
+  //  · 종 클릭(경고 발화)   → 해당 경고(손절/진입) → 사용자 알림  (발화된 곳만)
+  useEffect(() => {
+    if (!opened) { archSet(["s-track", "s-feat", "s-pred"], "실시간 추적 → 피처 계산 → 예측기 감시 중"); return; }
+    if (scenario === "stop") archSet(["s-stop", "s-notify"], "② 손절 경고 → 사용자 알림");
+    else archSet(["s-entry", "s-notify"], "① 진입오류 경고 → 사용자 알림");
+  }, [scenario, opened]);
   if (!data) return <div style={{ maxWidth: 560, margin: "0 auto" }}><Loading /></div>;
 
   const isStop = scenario === "stop";
