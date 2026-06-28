@@ -59,15 +59,18 @@ def _load_trades(conn: sqlite3.Connection) -> list[dict]:
             ar[tid] = (aid, res)
 
     out: list[dict] = []
-    for tid, code, name, qty, price, payload in conn.execute(
-        "select trade_id, code, name, qty, price, raw_payload_json from normalized_trades"
+    for tid, code, name, executed_at, qty, price, payload in conn.execute(
+        "select trade_id, code, name, executed_at, qty, price, raw_payload_json "
+        "from normalized_trades"
     ):
         p = json.loads(payload or "{}")
         agent_id, res = ar.get(tid, ("", {}))
+        # 진입(BUY 체결)은 normalized_trades 컬럼(executed_at·price)에 있고,
+        # payload 에는 청산(exit_dt)·실현손익만 담긴다.
         out.append({
             "trade_id": tid, "code": code, "name": name,
-            "entry_dt": p.get("entry_dt"), "exit_dt": p.get("exit_dt"),
-            "entry_price": p.get("entry_price"), "exit_price": p.get("exit_price"),
+            "entry_dt": p.get("entry_dt") or executed_at, "exit_dt": p.get("exit_dt"),
+            "entry_price": p.get("entry_price") or price, "exit_price": p.get("exit_price"),
             "pnl_pct": p.get("realized_pnl_pct"),
             "agent_id": agent_id,
             "signals": (res.get("signals") or {}),

@@ -46,10 +46,23 @@ python -c "from analysis.orchestrator.demo_alert_runner import backfill_user_pro
 backfill_user_profiles('tests/fixtures/demo_users_all_data.final_3sheets.xlsx')"
 
 # 거래별 미니차트 DB 빌드(백필 후 1회 — trade_id 바뀌면 재실행)
+# 출력의 "N건"이 0이면 차트가 하나도 안 들어간 것 — 거래별 탭이 빈다(아래 트러블슈팅).
 python -m analysis.ui.build_trade_charts
 
 uvicorn analysis.api.main:app --port 8000 --reload   # http://127.0.0.1:8000/docs
 ```
+
+> ⚠️ **`analysis/data/`는 gitignore라 `git pull`로 안 따라온다.** 위 백필·차트빌드 산출 DB
+> (`user_profiles.sqlite3`·`orchestrator.sqlite3`·`ui_trade_charts.sqlite3`)는 PC마다 새로
+> 만들어야 한다. min1 parquet는 [최상위 README 데이터](../README.md#L122)대로 Release에서 받는다.
+
+#### 트러블슈팅 — "데스크탑은 되는데 새 PC는 차트가 안 뜬다 / 탭이 불러오는중"
+
+| 증상 | 원인 | 해결 |
+|---|---|---|
+| 거래별 탭 차트가 전부 빈다 | `ui_trade_charts.sqlite3` 미빌드(0건) | 위 `build_trade_charts` 실행 후 출력이 `N건`(N>0)인지 확인 |
+| 내 성향·실시간 알림 탭이 "불러오는중"에서 멈춤 | 백엔드를 **옛 코드로** 띄움 — `/api/disposition`·`/api/holdings` 404 | uvicorn 재시작(브랜치 최신 코드로) |
+| 모든 유저 거래가 0건 | 백필 안 함 / 다른 DB 경로 | 백필 재실행, `.env`의 `MIRAE_*_DB` 경로 확인 |
 
 ### 2) 프론트엔드 (Next.js)
 

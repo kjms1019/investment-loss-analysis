@@ -127,6 +127,13 @@ Release zip을 `analysis/data/`에 풀면 `analysis/data/min1/{code}.parquet` �
 데이터를 저장소 밖(공유 드라이브 등)에 두려면 `.env`의 `MIRAE_DATA_ROOT`로 상위 폴더를
 지정한다(미지정 시 `analysis/data`). 그 폴더 아래 `min1/`·`.cache/`가 있어야 한다.
 
+> ⚠️ **`analysis/data/` 전체가 gitignore다 — `git pull`로 따라오지 않는다.** min1 parquet뿐
+> 아니라 분석 산출 DB(`orchestrator.sqlite3`·`user_profiles.sqlite3`)와 화면용 차트 캐시
+> (`ui_trade_charts.sqlite3`)도 **각자 PC에서 생성**해야 한다. 새 PC에서 웹 데모를 띄울 때는
+> [web/README.md](web/README.md#L37)의 **실행 1) 백엔드** 순서(백필 → 차트 빌드 → uvicorn)를
+> 반드시 거칠 것. 데스크탑은 되는데 노트북은 차트가 비거나 탭이 "불러오는중"에서 멈춘다면
+> 십중팔구 이 단계를 안 거쳤거나 백엔드를 옛 코드로 띄운 것이다.
+
 ## 검증/오프라인 (LLM 토큰 0)
 
 `MIRAE_DISABLE_LLM=1`이면 키가 있어도 모든 LLM 문장 생성(리포트·총괄 대화·알림·심리)이
