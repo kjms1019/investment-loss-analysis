@@ -30,13 +30,16 @@ EARLY_FRAC = 0.2    # '보유 초반' 구간 비율
 BREACH_THR = 0.03   # 손절선 근사 (-3%)
 
 # 분류기 입력 피처 (진입시점 맥락 — look-ahead 금지)
+# 다중공선성 점검(VIF) 후 정제: accel(=ret_5m−ret_20m, 완전공선성 VIF=∞)·
+# entry_vs_ma20(ret_20m과 r=0.84, VIF=10.98) 제거. 제거 후 5-fold AUC 유지(0.836),
+# 최대 VIF 10.98→5.46, VIF≥10 없음. 근거: analysis/validation/FEATURE_GROUNDING.md
+# entry_features_window 는 두 값을 계속 계산(에이전트 별칭 호환) — 모델 입력에서만 제외.
 FEATURES = [
     "rsi_14",
     "range_position_20", "range_position_60",
     "ret_5m", "ret_20m", "ret_60m", "ret_120m",
-    "accel",
     "entry_vs_high20", "entry_vs_high60",
-    "entry_vs_ma20", "ma_20_slope",
+    "ma_20_slope",
     "vol_20", "vol_60",
     "volume_ratio_20",
 ]
