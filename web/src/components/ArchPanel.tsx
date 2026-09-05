@@ -105,6 +105,15 @@ export default function ArchPanel({ variant = "page" }: { variant?: ArchVariant 
             </button>
           ))}
         </div>
+        {/* 이 패널이 뭘 하는 곳인지. 옆에 갑자기 도표가 떠 있으면 눌러서 조작하는
+            화면으로 오해하기 쉽다. 실제로 누를 수 있는 건 위 탭 두 개뿐이다. */}
+        <span style={{
+          ...(side ? { width: "100%", marginTop: 1 } : { marginLeft: 12 }),
+          fontSize: side ? 11 : 12.5, fontWeight: 500, color: MUTE, lineHeight: 1.45,
+        }}>
+          (왼쪽 앱을 진행하면 지금 도는 단계가 여기서 자동으로 켜집니다. 직접 조작하는
+          화면은 아니고, 분석단·솔루션단 버튼으로 흐름만 바꿔 볼 수 있어요.)
+        </span>
         <span style={{
           marginLeft: side ? 0 : "auto", fontSize: side ? 12 : 14, fontWeight: 600,
           color: any ? ACCENT : "#8A95A6",
@@ -190,6 +199,41 @@ function Down() {
   );
 }
 
+/** 본류(가운데 열) → 옆 박스로 들어가는 가로 화살표. 분기 조건은 화살표 위에 적는다. */
+function InArrow({ label, color = ARROW }: { label?: string; color?: string }) {
+  return (
+    <div style={{ position: "relative", width: 34, flexShrink: 0, alignSelf: "center" }}>
+      {label && (
+        <div style={{ position: "absolute", bottom: "100%", left: 0, marginBottom: 3, fontSize: 10.5, fontWeight: 800, color, whiteSpace: "nowrap" }}>{label}</div>
+      )}
+      <svg width="34" height="12" style={{ display: "block" }}>
+        <line x1="0" y1="6" x2="24" y2="6" stroke={color} strokeWidth="2.5" strokeLinecap="round" />
+        <path d="M22,1 L32,6 L22,11" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
+}
+
+/** 옆 박스 → 본류로 되돌아가는 ㄱ자 화살표. 박스 폭을 모르니 선은 CSS 로 늘린다.
+ *  up=false 는 아래로 내려가 왼쪽(다음 단계로), up=true 는 위로 올라가 왼쪽(앞 단계로 되돌아감). */
+function BackElbow({ up, label, color = ARROW }: { up?: boolean; label?: string; color?: string }) {
+  const H = 30;
+  const vert: CSSProperties = { position: "absolute", right: 30, width: 2, height: H - 7, background: color, ...(up ? { bottom: 0 } : { top: 0 }) };
+  const horz: CSSProperties = { position: "absolute", left: 13, right: 30, height: 2, background: color, ...(up ? { top: 5 } : { bottom: 5 }) };
+  const head: CSSProperties = { position: "absolute", left: 0, ...(up ? { top: 0 } : { bottom: 0 }) };
+  const cap: CSSProperties = { position: "absolute", left: 22, fontSize: 10.5, fontWeight: 800, color, whiteSpace: "nowrap", ...(up ? { top: 9 } : { bottom: 9 }) };
+  return (
+    <div style={{ position: "relative", height: H }}>
+      <div style={vert} />
+      <div style={horz} />
+      <svg width="13" height="12" viewBox="0 0 13 12" style={head}>
+        <path d="M11,0 L2,6 L11,12" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      {label && <div style={cap}>{label}</div>}
+    </div>
+  );
+}
+
 function Chip({ children, color }: { children: ReactNode; color: string }) {
   return <span style={{ fontSize: 12.5, fontWeight: 700, color, background: color + "22", border: `1.5px solid ${color}66`, borderRadius: 7, padding: "5px 11px" }}>{children}</span>;
 }
@@ -225,15 +269,31 @@ function AnalysisFlow({ A, any }: { A: (id: string) => boolean; any: boolean }) 
           </div>
           {conn}
           <Gut ko="라우팅" en="ROUTE" active={A("a-route")} />
-          <div><Diamond id="a-route" active={A("a-route")} title="빈도 1위 = 금액 1위?" sub="오류 집계 · 라우팅" color="#D2820F" /></div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+          <div><Diamond id="a-route" active={A("a-route")} title="빈도 1위? or 금액 1위?" sub="오류 집계 · 라우팅" color="#D2820F" /></div>
+          {/* 불일치 분기: 라우팅 → 사용자 선택 → (되돌아) 도메인 에이전트 */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: "#3FC4B2" }}>일치 → 즉시 호출</div>
-            <SideNote id="a-userpick" active={A("a-userpick")} title="사용자 선택" sub="불일치 시 · 무엇부터 볼지 선택 후 호출" color="#6B4FE0" />
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <InArrow label="불일치" color="#6B4FE0" />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <SideNote id="a-userpick" active={A("a-userpick")} title="사용자 선택" sub="무엇부터 볼지 고르기" color="#6B4FE0" />
+              </div>
+            </div>
+            <BackElbow label="선택 후 호출" color="#6B4FE0" />
           </div>
           {conn}
           <Gut ko="해석" en="AGENT" active={A("a-agent")} />
           <div><Proc id="a-agent" active={A("a-agent")} title="④ 도메인 에이전트" sub="분류 피쳐 + 심리 피쳐로 해석" bar="#4D7BE8" /></div>
-          <div><SideNote id="a-loop" active={A("a-loop")} title="다른 오류도 분석?" sub="예 → 다른 에이전트로 같은 단계 반복" color="#B5650A" dashed /></div>
+          {/* 반복 분기: 도메인 에이전트 → 다른 오류도 분석? → (되돌아) 같은 단계 다시 */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <BackElbow up label="예 → 같은 단계 반복" color="#B5650A" />
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <InArrow color="#B5650A" />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <SideNote id="a-loop" active={A("a-loop")} title="다른 오류도 분석?" sub="다른 에이전트로 진단" color="#B5650A" dashed />
+              </div>
+            </div>
+          </div>
           {conn}
           <Gut ko="저장" en="FINAL DB" active={A("a-finaldb")} />
           <div><DbCyl id="a-finaldb" active={A("a-finaldb")} title="⑤ 최종 DB" sub="실패원인 저장" color="#0F7B7B" fill="#DFF1EE" /></div>
