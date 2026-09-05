@@ -45,7 +45,8 @@ cp .env.example .env.local
 [nvm](https://github.com/nvm-sh/nvm) (macOS/Linux) 또는 [nvm-windows](https://github.com/coreybutler/nvm-windows) 를 권장합니다.
 
 ```bash
-# nvm 사용 시 — .nvmrc를 읽어 자동으로 버전 맞춤
+# nvm 사용 시 — web/.nvmrc 를 읽어 자동으로 버전 맞춤
+cd web
 nvm install
 nvm use
 ```
@@ -142,7 +143,8 @@ mirae_asset_agent/
 ├── web/                  # Next.js 대시보드
 ├── tests/                # 통합/단위 테스트
 ├── .env.example          # 환경변수 템플릿
-├── .nvmrc                # Node.js 버전 고정 (24.15.0)
+├── .python-version       # Python 버전 고정 (3.13.5) — 배포 런타임도 이걸 따른다
+├── web/.nvmrc            # Node.js 버전 고정 (24.15.0)
 └── SETUP.md              # 이 문서
 ```
 
