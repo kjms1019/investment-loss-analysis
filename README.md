@@ -29,7 +29,7 @@
 | 3. **분류** | `analysis/classifier` + `orchestrator/router.py` | **전체경로 피처 ML 분류기**가 손실거래마다 **entry_error / stop_loss_failure** 두 점수(합 1) 산출 → router가 **분류기 점수만으로** 라우팅 |
 | 4. 보조 신호 | `psych_agent/` + `손절실패 엔진` | 심리 귀속(리벤지·처분효과)·손절선(ATR) 신호 계산 — **라우팅엔 미반영**. 도메인 에이전트의 *해석/분석*에만 쓰임(6단계) |
 | 5. 총괄 질문 | `orchestrator/interaction.py` | 유형별 **빈도·손실금** 집계 → "자주 반복 vs 손실 큰 것, 뭘 먼저?" 사용자에게 질문 |
-| 6. 도메인 분석 | `agents/entry-error-agent` / `agents/손절실패` | 고른 유형의 거래를 심층 분석·설명. 분류와 **같은 피처** 사용 + **심리 피처(리벤지/처분효과)로 설명 보강**, 손절은 ATR·breach·MAE로 분석 |
+| 6. 도메인 분석 | `agents/entry-error-agent` / `agents/stop-loss-agent` | 고른 유형의 거래를 심층 분석·설명. 분류와 **같은 피처** 사용 + **심리 피처(리벤지/처분효과)로 설명 보강**, 손절은 ATR·breach·MAE로 분석 |
 | 7. 반복/저장 | `interaction` + `user_profile/` | "다른 유형도 볼까?" (최대 2회) → 성향·반복패턴 리포트 DB 저장 |
 
 > **라우팅 = 분류기 단독** (설계 의도). `pipeline`이 손실거래마다 `classifier_features_for_trade()`로
@@ -78,7 +78,7 @@
 | `analysis/user_profile/` | 성향·반복패턴 프로파일 저장 |
 | `analysis/collector/` | 키움 REST API 1분봉 수집기 |
 | `agents/entry-error-agent/` | 진입오류 도메인 에이전트 |
-| `agents/손절실패/` | 손절실패 도메인 에이전트 (ATR 손절선) |
+| `agents/stop-loss-agent/` | 손절실패 도메인 에이전트 (ATR 손절선) |
 | `web/` | Next.js 대시보드 |
 
 ---
@@ -115,40 +115,46 @@ cd web && npm install && npm run dev
 | [analysis/predictor/README.md](analysis/predictor/README.md) | 런타임 예측기 두 모드 |
 | [analysis/orchestrator/README.md](analysis/orchestrator/README.md) | 오케스트레이터 구조 |
 | [agents/entry-error-agent/SPEC.md](agents/entry-error-agent/SPEC.md) | 진입오류 에이전트 명세 |
-| [agents/손절실패/DESIGN.md](agents/손절실패/DESIGN.md) | 손절실패 에이전트 설계 |
+| [agents/stop-loss-agent/DESIGN.md](agents/stop-loss-agent/DESIGN.md) | 손절실패 에이전트 설계 |
 
 ---
 
 ## 데이터
 
-KOSPI 약 800종목, 1분봉 약 1년치. **GitHub Release**로 배포(`analysis/data/`는 gitignore).
-Release zip을 `analysis/data/`에 풀면 `analysis/data/min1/{code}.parquet` 구조가 된다.
+KOSPI 798종목, 1분봉 1년치(2025-06-23~2026-06-26). **GitHub Release**로 배포
+(`analysis/data/`는 gitignore).
 
 데이터를 저장소 밖(공유 드라이브 등)에 두려면 `.env`의 `MIRAE_DATA_ROOT`로 상위 폴더를
 지정한다(미지정 시 `analysis/data`). 그 폴더 아래 `min1/`·`.cache/`가 있어야 한다.
 
 > ⚠️ **`analysis/data/` 전체가 gitignore다 — `git pull`로 따라오지 않는다.** min1 parquet뿐
 > 아니라 분석 산출 DB(`orchestrator.sqlite3`·`user_profiles.sqlite3`)와 화면용 차트 캐시
-> (`ui_trade_charts.sqlite3`)도 **각자 PC에서 생성**해야 한다. 데스크탑은 되는데 노트북은
-> 차트가 비거나 탭이 "불러오는중"에서 멈춘다면 십중팔구 이 단계를 안 거쳤거나 백엔드를
-> 옛 코드로 띄운 것이다.
+> (`ui_trade_charts.sqlite3`), 종목코드 캐시(`.cache/kospi_codes.csv`)도 **각자 PC에서
+> 준비**해야 한다.
 
-### 데모 DB 빠른 셋업 (백필·차트빌드 생략)
-
-분석 산출 DB 3종을 `demo_db` 릴리스에 묶어 올려뒀다(109KB). 받아서 풀면 백필·차트빌드 없이
-바로 거래별 탭까지 뜬다.
+### 전체 셋업 (3단계)
 
 ```bash
-# 저장소 루트에서
-curl -L -o mirae_demo_db.zip \
-  https://github.com/kjms1019/mirae_asset_agent/releases/download/demo_db/mirae_demo_db.zip
-unzip -o mirae_demo_db.zip -d analysis/data/
+# 1) 분석 산출 DB 3종 (109KB) — 거래별·대시보드·성향 탭
+gh release download demo_db -R kjms1019/investment-loss-analysis -D /tmp/dl
+unzip -o /tmp/dl/mirae_demo_db.zip -d analysis/data/
 # → analysis/data/{orchestrator,user_profiles,ui_trade_charts}.sqlite3
+
+# 2) 1분봉 parquet (857MB) — 실시간 알림·보유 점검·전체 거래 차트
+gh release download kospi-min1-1y-20260626 -R kjms1019/investment-loss-analysis -D /tmp/dl
+mkdir -p analysis/data/min1
+unzip -o /tmp/dl/kospi-min1-1y-20260626.zip -d analysis/data/min1/
+# ⚠ zip 내부가 flat 구조라 반드시 min1/ 을 목적지로 지정해야 한다.
+#   analysis/data/ 에 풀면 parquet 798개가 루트에 흩어진다.
+
+# 3) 종목코드 캐시 — 종목명 → 코드 매핑
+python -m analysis.collector.universe        # 키움 키가 있을 때
+python scripts/build_codes_cache.py          # 키움 키 없이 KRX 상장목록으로 생성
 ```
 
-> 단, **실시간 알림·보유 점검·전체 거래 차트**는 런타임에 min1 parquet을 직접 읽으므로
-> 완전한 데모는 별도 min1 Release까지 받아야 한다(거래별 탭은 위 DB만으로 동작).
-> DB를 새로 만들고 싶으면 [web/README.md](web/README.md#L37)의 백필→차트빌드 순서를 따른다.
+> **3번을 건너뛰면 조용히 망가진다.** `load_name_to_code()`가 빈 dict를 돌려주고,
+> 종목명을 코드로 못 바꾼 거래가 전부 스킵돼 `/api/all-trades`·`/api/alerts`가
+> 에러 없이 **빈 배열**로 나온다. "차트 탭이 비어있다"의 가장 흔한 원인이다.
 
 ## 검증/오프라인 (LLM 토큰 0)
 

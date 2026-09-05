@@ -2,7 +2,7 @@ import type { Diagnosis } from "@/lib/types";
 import { SEV_META } from "./ui";
 
 export function DiagnosisPanel({ diagnosis }: { diagnosis: Diagnosis }) {
-  const isLLM = diagnosis.engine.startsWith("anthropic");
+  const isLLM = diagnosis.engine.startsWith("llm:");
   const perType = Object.values(diagnosis.per_type ?? {});
 
   return (
@@ -16,7 +16,7 @@ export function DiagnosisPanel({ diagnosis }: { diagnosis: Diagnosis }) {
               : "bg-slate-500/10 text-slate-400 ring-slate-600/30"
           }`}
         >
-          {isLLM ? `LLM · ${diagnosis.engine.replace("anthropic:", "")}` : "룰 템플릿"}
+          {isLLM ? `LLM · ${diagnosis.engine.replace("llm:", "")}` : "룰 템플릿"}
         </span>
       </div>
 

@@ -163,9 +163,7 @@ ATR(14일) × k(2.0) ÷ 매수평단     ← 변동성 기반 자동 계산
 | 항목 | 상태 | 위치 |
 |---|---|---|
 | 더미 정답지 5개 (A~E) | 5/5 통과 | [`data/dummy.py`](data/dummy.py), [`tests/test_dummy.py`](tests/test_dummy.py) |
-| 가상 거래 20건 (실제 KOSPI 분봉 가격 기반) | 검증 완료 | [`data/virtual_trades.py`](data/virtual_trades.py) |
 | 실제 분봉 데이터 (798종목, 245거래일) | `analysis/data/min1/*.parquet` (git 미추적, 로컬 전용) | [`data_loader.py`](data_loader.py) |
-| Streamlit 데모 | `streamlit run app_streamlit.py` | [`app_streamlit.py`](app_streamlit.py) |
 
 ### 더미 정답지 요약
 

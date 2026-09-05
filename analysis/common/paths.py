@@ -1,7 +1,7 @@
 """데이터 루트 경로 단일 해소 모듈.
 
 분봉(min1) parquet·종목코드 캐시가 어디에 있는지를 한 곳에서 정한다.
-이전에는 min1_lookup / collector.config / agent_registry / 손절실패.data_loader
+이전에는 min1_lookup / collector.config / agent_registry / stop-loss-agent.data_loader
 네 곳이 각자 `analysis/data/min1` 를 상대경로로 재정의해, 다른 PC나 공유
 드라이브에 데이터를 두면 경로를 일일이 바꿔야 했다.
 

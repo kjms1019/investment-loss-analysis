@@ -92,7 +92,7 @@ class TendencyReportText:
     subheadline: str
     insight_banner: str
     cards: List[TendencyCardText] = field(default_factory=list)
-    engine: str = "template"   # "anthropic:<model>" | "template" | "llm_error"
+    engine: str = "template"   # "llm:<model>" | "template" | "llm_error"
     llm_error: Optional[str] = None
 
 

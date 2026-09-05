@@ -2,8 +2,8 @@
 
 psych_agent/diagnose.py 와 같은 원칙:
   · PatternFact(숫자·종목명)는 그대로 두고, 여기서는 '문장'만 입힌다.
-  · ANTHROPIC_API_KEY 가 있고 anthropic 패키지가 설치돼 있으면 Claude 호출,
-    없거나 실패하면 결정적 템플릿 폴백 → 키 없이도 그대로 구동된다.
+  · 공용 LLM 창구(analysis.llm)로 Qwen 호출, 실패하면 결정적 템플릿 폴백
+    → 키 없이도 그대로 구동된다.
   · LLM은 새 수치를 만들지 않는다. JSON만 출력하도록 강하게 제약한다.
 
 이 모듈이 받는 입력(TendencyReportInput)과 돌려주는 출력(TendencyReportText)의
@@ -140,15 +140,15 @@ def _llm_generate(report_input: TendencyReportInput, config: Config) -> Tendency
     if not config.use_llm or not report_input.patterns:
         return None
 
-    # 공용 Claude 클라이언트(.env 로딩·키/패키지 폴백 일원화) 사용
-    from analysis.llm import generate, model_for, strip_code_fence
+    # 공용 LLM 창구(.env 로딩·키/엔드포인트/폴백 일원화) 사용
+    from analysis.llm import engine_tag, generate, model_for, strip_code_fence
     model = os.environ.get("TENDENCY_LLM_MODEL") or model_for("default")
     user_payload = json.dumps(report_input.to_dict(), ensure_ascii=False, indent=2)
 
     text = generate(_SYSTEM_PROMPT, user_payload, kind="default", model=model,
                     max_tokens=1500, fallback="")
     if not text:
-        return None  # 키 없음/패키지 없음/호출 실패 → 템플릿 폴백
+        return None  # 키 없음/차단 스위치/호출 실패 → 템플릿 폴백
 
     try:
         parsed = json.loads(strip_code_fence(text))
@@ -166,7 +166,7 @@ def _llm_generate(report_input: TendencyReportInput, config: Config) -> Tendency
             subheadline=parsed["subheadline"],
             insight_banner=parsed["insight_banner"],
             cards=cards,
-            engine=f"anthropic:{model}",
+            engine=engine_tag(model=model),
         )
     except Exception as e:  # noqa: BLE001 - 폴백을 위해 광범위 캐치 (파싱 실패 포함)
         return TendencyReportText(headline="", subheadline="", insight_banner="", engine="llm_error", llm_error=str(e))
@@ -175,7 +175,7 @@ def _llm_generate(report_input: TendencyReportInput, config: Config) -> Tendency
 def generate_text(report_input: TendencyReportInput, config: Config | None = None) -> TendencyReportText:
     config = config or Config()
     result = _llm_generate(report_input, config)
-    if result and result.engine.startswith("anthropic"):
+    if result and result.engine.startswith("llm:"):
         return result
     fallback = _template_generate(report_input)
     if result and result.engine == "llm_error":

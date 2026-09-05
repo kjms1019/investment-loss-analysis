@@ -7,6 +7,10 @@ openpyxl==3.1.5          # 데모 사용자 xlsx 읽기
 # ─── 데이터 수집 (키움 REST API) ─────────────────────────────────────────────
 requests==2.32.3
 
+# 종목코드 캐시(.cache/kospi_codes.csv) 재생성용 — 키움 키 없이 KRX 상장목록 조회.
+# 런타임엔 안 쓰이고 scripts/build_codes_cache.py 에서만 쓴다.
+finance-datareader==0.9.96
+
 # ─── 시각화 ──────────────────────────────────────────────────────────────────
 matplotlib==3.10.9
 seaborn==0.13.2
@@ -15,8 +19,9 @@ seaborn==0.13.2
 scipy==1.17.1
 scikit-learn==1.8.0
 
-# ─── LLM (Claude 자연어 생성: 리포트·거래설명·알림·총괄대화) ──────────────────
-anthropic==0.107.0
+# ─── LLM (Qwen 자연어 생성: 리포트·거래설명·알림·총괄대화·심리진단) ───────────
+# OpenAI 호환 규약만 사용 → LLM_BASE_URL 만 바꾸면 사내 vLLM/Ollama 로 전환된다.
+openai==2.6.1
 
 # ─── HTTP API (프론트 web/ 연동: analysis.api.main) ──────────────────────────
 fastapi==0.138.1

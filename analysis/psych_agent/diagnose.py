@@ -1,8 +1,8 @@
 """진단 문장화 (룰+LLM 하이브리드의 LLM 단).
 
 룰/통계 엔진이 만든 팩트(TypeFinding)는 그대로 두고, 여기서는 '문장'만 입힌다.
-  · ANTHROPIC_API_KEY 가 있고 anthropic 패키지가 설치돼 있으면 Claude 호출.
-  · 없으면 결정적 템플릿 폴백 → 키 없이도 그대로 구동된다.
+  · 공용 LLM 창구(analysis.llm)를 통해 Qwen 호출. 호출 가능 여부는 그쪽이 판단한다.
+  · 키가 없거나 호출이 실패하면 결정적 템플릿 폴백 → 키 없이도 그대로 구동된다.
 
 LLM은 수치를 새로 만들지 않는다. 주어진 팩트만 해석·요약하도록 강하게 제약한다.
 """
@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 
+from analysis import llm
 from .config import Config
 from .schema import TypeFinding
 
@@ -83,15 +84,8 @@ def _template_diagnose(findings: list[TypeFinding], config: Config) -> dict:
 def _llm_diagnose(findings: list[TypeFinding], config: Config) -> dict | None:
     if not config.use_llm:
         return None
-    # 검증/오프라인 강제 차단 스위치 (analysis.llm 과 동일 규약). 키가 있어도 토큰 0.
-    if os.environ.get("MIRAE_DISABLE_LLM", "").strip().lower() in ("1", "true", "yes", "on"):
-        return None
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        return None
-    try:
-        import anthropic  # noqa: F401
-    except ImportError:
+    # 차단 스위치·키 유무·엔드포인트 판단은 전부 공용 창구가 책임진다.
+    if not llm.available():
         return None
 
     model = os.environ.get("PSYCH_LLM_MODEL", config.llm_model)
@@ -121,24 +115,17 @@ def _llm_diagnose(findings: list[TypeFinding], config: Config) -> dict | None:
         + "\n\n이 팩트만으로 진단 리포트를 작성하라."
     )
 
-    try:
-        client = anthropic.Anthropic(api_key=api_key)
-        resp = client.messages.create(
-            model=model,
-            max_tokens=1500,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        )
-        text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
-        return {"engine": f"anthropic:{model}", "headline": "", "body": text.strip(), "per_type": {}}
-    except Exception as e:  # noqa: BLE001 - 폴백을 위해 광범위 캐치
-        return {"engine": "llm_error", "error": str(e)}
+    text = llm.generate(system, user, kind="psych", model=model, max_tokens=1500)
+    if not text:
+        # 공용 창구가 폴백(빈 문자열)을 돌려준 경우 = 호출 실패. 템플릿으로 넘긴다.
+        return {"engine": "llm_error", "error": "llm call failed or returned empty"}
+    return {"engine": llm.engine_tag(model=model), "headline": "", "body": text, "per_type": {}}
 
 
 def diagnose(findings: list[TypeFinding], config: Config | None = None) -> dict:
     config = config or Config()
     result = _llm_diagnose(findings, config)
-    if result and result.get("engine", "").startswith("anthropic"):
+    if result and result.get("engine", "").startswith("llm:"):
         return result
     # LLM 에러/미사용/키없음 → 템플릿 폴백
     fallback = _template_diagnose(findings, config)

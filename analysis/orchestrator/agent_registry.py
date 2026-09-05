@@ -21,7 +21,7 @@ from ._agent_loader import vendored_agent
 _PROJECT_ROOT     = Path(__file__).resolve().parents[2]
 _AGENTS_DIR       = _PROJECT_ROOT / "agents"
 _ENTRY_ERROR_DIR  = _AGENTS_DIR / "entry-error-agent"
-_STOP_FAIL_DIR    = _AGENTS_DIR / "손절실패"
+_STOP_FAIL_DIR    = _AGENTS_DIR / "stop-loss-agent"
 from analysis.common.paths import MIN1_DIR as _MIN1_DIR          # 실 1분봉 (에이전트 피처용, MIRAE_DATA_ROOT)
 
 # 각 vendored 에이전트가 점유하는 최상위 모듈명 (격리 대상)

@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import collections
+import os
 import sys
 from functools import lru_cache
 from pathlib import Path
@@ -32,10 +33,14 @@ from analysis.user_profile import UserProfileStorage
 
 app = FastAPI(title="왜 잃었지? API", version="0.1.0")
 
-# 프론트(Next dev) CORS
+# CORS — 로컬 개발용 origin 은 항상 열고, 배포 도메인은 CORS_ORIGINS 로 추가한다.
+# (쉼표 구분. 예: CORS_ORIGINS=https://why-did-i-lose.vercel.app)
+_DEV_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+_ENV_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=_DEV_ORIGINS + _ENV_ORIGINS,
+    allow_origin_regex=r"https://.*\.vercel\.app",   # Vercel 프리뷰 배포
     allow_methods=["*"],
     allow_headers=["*"],
 )

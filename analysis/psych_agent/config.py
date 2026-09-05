@@ -35,9 +35,9 @@ class Config:
     disposition_min_gap: float = 0.05
 
     # ── LLM 진단 문장화 ─────────────────────────────────────────
-    # ANTHROPIC_API_KEY 가 있고 anthropic 패키지가 깔려 있으면 LLM 사용,
-    # 아니면 템플릿 폴백. 모델은 환경변수 PSYCH_LLM_MODEL 로도 덮어쓸 수 있다.
-    llm_model: str = "claude-sonnet-4-6"
+    # 공용 창구(analysis.llm)가 호출 가능하면 LLM 사용, 아니면 템플릿 폴백.
+    # 모델은 환경변수 PSYCH_LLM_MODEL 로도 덮어쓸 수 있다.
+    llm_model: str = "qwen/qwen3-32b"
     use_llm: bool = True  # False 면 무조건 템플릿
 
     # 거래 1건당 가정 수수료+세금률 (더미/팩트 계산용, 매도 기준 0.2%)

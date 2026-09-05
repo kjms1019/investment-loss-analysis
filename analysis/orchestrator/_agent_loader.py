@@ -1,6 +1,6 @@
 """Vendored 에이전트 격리 로더.
 
-`agents/손절실패/`, `agents/entry-error-agent/` 등은 패키지가 아니라 폴더 안에서 최상위
+`agents/stop-loss-agent/`, `agents/entry-error-agent/` 등은 패키지가 아니라 폴더 안에서 최상위
 절대 import(`from schema import ...`, `from agent import ...`)를 쓴다.
 여러 에이전트가 동시에 `schema` / `config` / `agent` 같은 동일한 최상위
 모듈명을 점유하면 sys.modules 캐시가 충돌해 엉뚱한 모듈을 잡는다.

@@ -1,0 +1,24 @@
+# 배포 API 서버 런타임 의존성만. (개발·분석용 전체 목록은 analysis/requirements.txt)
+#
+# analysis/requirements.txt 에는 jupyterlab·matplotlib·seaborn·supabase·nbstripout 처럼
+# 노트북/분석 단계에서만 쓰는 무거운 패키지가 섞여 있다. 배포 이미지에 그걸 다 넣으면
+# 빌드가 느려지고 콜드스타트가 나빠져서, 서비스가 실제로 import 하는 것만 남겼다.
+
+# ─── HTTP API ────────────────────────────────────────────────────────────────
+fastapi==0.138.1
+uvicorn[standard]==0.49.0
+python-multipart==0.0.20
+
+# ─── 데이터 처리 ─────────────────────────────────────────────────────────────
+pandas==3.0.3
+numpy==2.4.6
+pyarrow==18.1.0          # min1 parquet 읽기
+openpyxl==3.1.5          # 데모 사용자 픽스처 xlsx
+
+# ─── 분류기·예측기 (런타임 추론) ─────────────────────────────────────────────
+scikit-learn==1.8.0
+scipy==1.17.1
+
+# ─── LLM (Qwen · OpenAI 호환) ────────────────────────────────────────────────
+openai==2.6.1
+python-dotenv==1.0.1

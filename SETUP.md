@@ -54,7 +54,10 @@ nvm 없이 직접 설치하는 경우 Node.js 24.x LTS 버전을 [nodejs.org](ht
 
 ### 3-2. 의존성 설치
 
+프론트엔드는 `web/` 안에 있다. 저장소 루트가 아니라 `web/`에서 실행해야 한다.
+
 ```bash
+cd web
 npm install
 ```
 
@@ -63,6 +66,8 @@ npm install
 ```bash
 npm run dev
 ```
+
+API 주소는 `NEXT_PUBLIC_API_BASE` 로 바꾼다 (기본 `http://127.0.0.1:8000`).
 
 브라우저에서 `http://localhost:3000` 을 열면 확인할 수 있습니다.
 
