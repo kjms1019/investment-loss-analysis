@@ -1,0 +1,35 @@
+# Render 배포 설정 — 백엔드 API 전용.
+# 프론트(web/)는 Vercel 에 따로 올린다.
+#
+# Dockerfile 을 쓰지 않는 이유: 로컬에 Docker 가 없어 이미지 빌드를 검증할 수 없다.
+# 검증 못 한 Dockerfile 을 배포 경로에 거는 것보다 네이티브 런타임이 안전하다.
+#
+# 빌드 단계에서 데모 데이터(172MB)를 Release 에서 받아 analysis/data/ 에 푼다.
+# 번들에 결함이 있으면 fetch_demo_bundle.py 가 빌드를 실패시킨다 —
+# 데이터가 빈 채로 배포돼 화면만 조용히 비는 상황을 막기 위해서다.
+services:
+  - type: web
+    name: mirae-loss-api
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: |
+      pip install -r requirements-api.txt
+      python scripts/fetch_demo_bundle.py
+    startCommand: uvicorn analysis.api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.5"
+      # LLM — 값은 Render 대시보드에서 직접 넣는다(키를 저장소에 두지 않는다).
+      - key: LLM_BASE_URL
+        value: https://openrouter.ai/api/v1
+      - key: LLM_MODEL
+        value: qwen/qwen3-30b-a3b-instruct-2507
+      - key: LLM_API_KEY
+        sync: false
+      # Vercel 배포 후 그 도메인을 넣는다. 비면 브라우저가 API 호출을 차단한다.
+      - key: CORS_ORIGINS
+        sync: false
+      - key: MIRAE_DB_BACKEND
+        value: sqlite

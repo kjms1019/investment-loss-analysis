@@ -123,7 +123,9 @@ def _trade_charts() -> dict:
     import sqlite3
     out: dict[str, dict] = {}
     try:
-        conn = sqlite3.connect("analysis/data/ui_trade_charts.sqlite3")
+        from analysis.common.paths import DATA_DIR
+
+        conn = sqlite3.connect(DATA_DIR / "ui_trade_charts.sqlite3")
         for tid, payload in conn.execute("select trade_id, payload_json from trade_charts"):
             out[tid] = _json.loads(payload)
         conn.close()
