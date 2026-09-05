@@ -79,14 +79,19 @@ def _load_trades(conn: sqlite3.Connection) -> list[dict]:
     return out
 
 
-def _downsample(df: pd.DataFrame, max_points: int) -> pd.DataFrame:
-    """행을 균등 간격으로 솎아 max_points 이하로 만든다(첫·끝 보존)."""
+def _downsample(df: pd.DataFrame, max_points: int, keep: set[int] | None = None) -> pd.DataFrame:
+    """행을 균등 간격으로 솎아 max_points 이하로 만든다(첫·끝, 그리고 keep 보존).
+
+    keep 은 반드시 남겨야 하는 위치(iloc 기준). 손절선을 처음 뚫은 분봉이 여기 들어간다.
+    균등 솎기만 하면 그 분봉이 통째로 빠져서, 화면의 손절 신호 세로선이 손절선
+    가로선에 닿지 않고 몇십 원 위에 떠 보인다.
+    """
     n = len(df)
     if n <= max_points:
         return df.reset_index(drop=True)
     step = n / max_points
-    idx = sorted({int(i * step) for i in range(max_points)} | {0, n - 1})
-    return df.iloc[idx].reset_index(drop=True)
+    idx = {int(i * step) for i in range(max_points)} | {0, n - 1} | (keep or set())
+    return df.iloc[sorted(i for i in idx if 0 <= i < n)].reset_index(drop=True)
 
 
 def _nearest_i(series_t: list[str], target: datetime) -> int:
@@ -97,6 +102,45 @@ def _nearest_i(series_t: list[str], target: datetime) -> int:
         if best_d is None or d < best_d:
             best_i, best_d = i, d
     return best_i
+
+
+def _stop_cross_rows(df: pd.DataFrame, tr: dict) -> set[int]:
+    """돌파일에 손절선을 처음 밑도는 행 위치(iloc). 다운샘플에서 보존할 대상이다."""
+    sig = tr.get("signals") or {}
+    if tr.get("agent_id") != "stop_loss_failure":
+        return set()
+    stop_pct, bd = sig.get("stop_pct"), sig.get("breach_date")
+    entry_price = tr.get("entry_price")
+    if stop_pct is None or not bd or not entry_price:
+        return set()
+    stop = round(float(entry_price) * (1 + stop_pct / 100.0))
+    day = datetime.fromisoformat(bd).date()
+    hit = df.index[(df["datetime"].dt.date == day) & (df["close"] <= stop)]
+    return {int(hit[0])} if len(hit) else set()
+
+
+def _breach_i(series_t: list[str], closes: list[int], breach_date: str, stop: int | None) -> int:
+    """손절선을 넘은 지점의 인덱스. 화면의 세로선(손절 신호)이 여기 그려진다.
+
+    breach_date 는 날짜만 있고 시각이 없다. 그대로 _nearest_i 에 넘기면 자정 기준으로
+    재서 전날 장마감 봉이 당일 첫 봉보다 가까워지는 일이 생긴다(9/17 돌파가 9/16
+    14:43 으로 찍혔다 — 9시간 17분 대 9시간 20분, 3분 차이였다).
+
+    그래서 먼저 그 거래일 안으로 후보를 좁힌다. 그 안에서는 손절선을 처음 밑도는
+    지점을 고른다. 돌파 판정은 일중 저가로 하는데 이 시계열은 종가만 담고 있어,
+    당일 종가가 손절선까지 안 내려오는 경우가 있다(다운샘플링으로 해당 분이 빠지기도
+    한다). 그럴 때는 그 날 최저 종가 지점 — 가로선에 가장 가까운 점 — 으로 둔다.
+    """
+    target = datetime.fromisoformat(breach_date)
+    same_day = [i for i, t in enumerate(series_t)
+                if datetime.fromisoformat(t).date() == target.date()]
+    if not same_day:
+        return _nearest_i(series_t, target)
+    if stop is not None:
+        below = [i for i in same_day if closes[i] <= stop]
+        if below:
+            return below[0]
+    return min(same_day, key=lambda i: closes[i])
 
 
 def _build_one(tr: dict) -> dict | None:
@@ -119,7 +163,12 @@ def _build_one(tr: dict) -> dict | None:
     df = df[(df["datetime"] >= lo_t) & (df["datetime"] <= hi_t)]
     if len(df) < 2:
         return None
-    df = _downsample(df.sort_values("datetime"), MAX_POINTS)
+    df = df.sort_values("datetime").reset_index(drop=True)
+
+    # 손절선을 처음 뚫은 분봉은 솎아내기에서 살려둔다. 그래야 화면에서
+    # 손절 신호 세로선과 손절선 가로선이 가격곡선 위 한 점에서 만난다.
+    keep = _stop_cross_rows(df, tr)
+    df = _downsample(df, MAX_POINTS, keep)
 
     series = [{"t": t.isoformat(), "c": int(c)} for t, c in zip(df["datetime"], df["close"])]
     series_t = [s["t"] for s in series]
@@ -148,7 +197,7 @@ def _build_one(tr: dict) -> dict | None:
         bd = sig.get("breach_date")
         if bd:
             try:
-                bi = _nearest_i(series_t, datetime.fromisoformat(bd))
+                bi = _breach_i(series_t, closes, bd, payload["stop"])
                 payload["breach"] = {"i": bi, "t": series_t[bi]}
             except Exception:
                 pass

@@ -110,7 +110,7 @@ export function DispositionCard({ finding }: { finding: Finding }) {
         />
         <Stat
           label="보유기간 비"
-          value={winHold ? `×${(lossHold / winHold).toFixed(1)}` : "—"}
+          value={winHold ? `×${(lossHold / winHold).toFixed(1)}` : "-"}
           sub="손실/수익"
           tone={lossHold > winHold ? "neg" : "default"}
         />

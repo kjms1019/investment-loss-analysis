@@ -98,11 +98,11 @@ export default function Home() {
     switch (screen) {
       case "login":
       case "consent":
-        archSet([], "대기 중 — 데모를 시작하면 켜집니다"); break;
+        archSet([], "대기 중. 데모를 시작하면 켜집니다"); break;
       case "upload":
-        archSet(["a-input"], "① 거래내역 입력 — CSV 업로드"); break;
+        archSet(["a-input"], "① 거래내역 입력 · CSV 업로드"); break;
       case "analyze":
-        if (showResult) { archSet(["a-route"], "③ 빈도 1위 = 금액 1위? — 라우팅 판단"); }
+        if (showResult) { archSet(["a-route"], "③ 빈도 1위 = 금액 1위? · 라우팅 판단"); }
         else {
           const m: [string[], string][] = [
             [["a-orch", "a-db1"], "거래내역 파싱 → 분석 DB 적재"],
@@ -110,7 +110,7 @@ export default function Home() {
             // 자동 파이프라인은 '분류기까지만' 색인한다. 라우팅 다이아몬드(a-route)는
             // 사용자가 빈도/금액을 '선택'하는 순간에만 깜빡이고, 도메인 에이전트(a-agent)는
             // 선택을 마친 뒤에만 켜진다.
-            [["a-clf"], "2-way 분류 — 건별 진입오류·손절실패"],
+            [["a-clf"], "2-way 분류: 건별 진입오류·손절실패"],
             [["a-clf"], "건별 분류 결과 정리"],
           ];
           const [nodes, note] = m[Math.min(progressStep, 3)];
@@ -118,9 +118,9 @@ export default function Home() {
         }
         break;
       case "dashboard":
-        archSet(["a-agent"], "④ 도메인 에이전트 — 도메인별 진단"); break;
+        archSet(["a-agent"], "④ 도메인 에이전트 · 도메인별 진단"); break;
       case "trades":
-        archSet(["a-agent"], "④ 거래별 설명 — 도메인 에이전트"); break;
+        archSet(["a-agent"], "④ 거래별 설명 · 도메인 에이전트"); break;
       case "profile":
         archSet(["a-finaldb", "a-report"], "⑤ 최종 DB → ⑥ 진단 리포트 (성향)"); break;
       case "alerts":
@@ -160,7 +160,7 @@ export default function Home() {
 
       <main style={{ maxWidth: 1080, margin: "0 auto", padding: "28px clamp(16px,4vw,40px) 96px" }}>
         {err && <div style={{ background: "#FFF3EC", color: "#F5500A", border: "1px solid #FBD9BF", borderRadius: 12, padding: "12px 14px", marginBottom: 18, fontSize: 14 }}>
-          백엔드 연결 오류: {err} — <b>uvicorn analysis.api.main:app --port 8000</b> 실행 중인지 확인하세요.
+          백엔드 연결 오류: {err}. <b>uvicorn analysis.api.main:app --port 8000</b> 실행 중인지 확인하세요.
         </div>}
 
         {screen === "login" && <Login onLogin={() => { setAuthed(true); go("consent"); }} onDemo={() => { if (users[0]) setUser(users[0].id); setAuthed(true); go("consent"); }} />}
@@ -311,8 +311,8 @@ function Analyze({ step, done, trades, all, onSeeResult, onGo }: {
   useEffect(() => {
     if (!done) return;
     if (calling) archSet(["a-agent"], "④ 도메인 에이전트 호출");
-    else if (pick) archSet(["a-route", "a-userpick"], "사용자 선택 — 무엇부터 볼지");
-    else archSet(["a-route"], "③ 빈도 1위 = 금액 1위? — 라우팅 판단");
+    else if (pick) archSet(["a-route", "a-userpick"], "사용자 선택 · 무엇부터 볼지");
+    else archSet(["a-route"], "③ 빈도 1위 = 금액 1위? · 라우팅 판단");
   }, [done, pick, calling]);
 
   // 전체 거래 차트 — 단계가 진행될수록 '색인'이 점진적으로 들어간다.
@@ -543,8 +543,8 @@ function TradesView({ trades, filterType, setFilterType, filterSev, setFilterSev
   const shouldAsk = other.count > 0 && !other.seen; // 안 본 다른 도메인이 거래가 있으면 물어본다
   // 아키텍처 연동: '다른 오류도 분석?' 반복 프롬프트가 뜨면 루프 노드를 함께 점등
   useEffect(() => {
-    if (asking) archSet(["a-loop"], "다른 오류도 분석? — 반복 여부 묻기");
-    else archSet(["a-agent"], "④ 거래별 설명 — 도메인 에이전트");
+    if (asking) archSet(["a-loop"], "다른 오류도 분석? · 반복 여부 묻기");
+    else archSet(["a-agent"], "④ 거래별 설명 · 도메인 에이전트");
   }, [asking]);
   const filtered = trades.filter((t) => (filterType === "all" || t.type === filterType) && (filterSev === "all" || t.sev === filterSev));
   const active = selTrade != null && selTrade < filtered.length ? selTrade : 0;
@@ -627,7 +627,7 @@ function TradesView({ trades, filterType, setFilterType, filterSev, setFilterSev
                 {/* 왜 이 분류인가 — 피쳐 근거 */}
                 {t.why?.length > 0 && (
                   <div style={{ marginBottom: 14 }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 700, color: m.color, marginBottom: 8 }}>왜 {t.typeName}로 봤나 — 분류기가 걸러낸 신호</div>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: m.color, marginBottom: 8 }}>왜 {t.typeName}로 봤나: 분류기가 걸러낸 신호</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       {t.why.map((w, k) => (
                         <div key={k} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13.5, lineHeight: 1.55, color: w.strong ? "#191F28" : "#4E5968", fontWeight: w.strong ? 600 : 400 }}>
@@ -673,7 +673,7 @@ function TradesView({ trades, filterType, setFilterType, filterSev, setFilterSev
                   <div style={{ background: "#F8F9FA", borderRadius: 10, padding: "10px 12px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 7 }}>
                       <span style={{ fontSize: 12, color: "#8B95A1" }}>분류기 라우팅 점수</span>
-                      <span style={{ fontSize: 11, fontWeight: 600, borderRadius: 6, padding: "3px 8px", color: "#0B2E59", background: "#EAF0F8" }}>{t.route || "—"} · 신뢰도 {t.conf != null ? Math.round(t.conf * 100) + "%" : "—"}</span>
+                      <span style={{ fontSize: 11, fontWeight: 600, borderRadius: 6, padding: "3px 8px", color: "#0B2E59", background: "#EAF0F8" }}>{t.route || "-"} · 신뢰도 {t.conf != null ? Math.round(t.conf * 100) + "%" : "-"}</span>
                     </div>
                     <div style={{ display: "flex", height: 8, borderRadius: 5, overflow: "hidden", background: "#E9ECEF" }}>
                       <div style={{ width: eW + "%", background: "#F0890C" }} /><div style={{ width: cW + "%", background: "#0B2E59" }} />
@@ -923,7 +923,7 @@ function OrderRow({ label, value, step }: { label: string; value: string; step?:
   );
 }
 
-// 미래에셋 앱 목업 (레퍼런스 기반) — scenario='stop' 보유목록 / 'entry' 매수주문. 우상단 종 알림.
+// 증권사 앱 목업 (레퍼런스 기반). scenario='stop' 보유목록 / 'entry' 매수주문. 우상단 종 알림.
 function PhoneApp({ scenario, holdings, plan, highlightCode, opened, onBell }: {
   scenario: "stop" | "entry"; holdings: Holding[]; plan: Alert | null; highlightCode?: string; opened: boolean; onBell: () => void;
 }) {
@@ -1086,14 +1086,14 @@ function AlertsView({ data }: { data: HoldingsResp | null }) {
         <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#0B2E59" }} />알림 루프 · 실시간
       </div>
       <h2 style={{ fontSize: "clamp(22px,3.8vw,28px)", fontWeight: 700, color: "#0B2E59", lineHeight: 1.32, margin: "14px 0 10px", textAlign: "center" }}>실시간으로 예측하고,<br />앱이 미리 잡아줘요</h2>
-      <p style={{ color: "#8B95A1", fontSize: 15.5, lineHeight: 1.65, margin: "0 auto 22px", maxWidth: 520, textAlign: "center" }}>미래에셋 앱을 쓰는 중 위험 순간이 오면 여기서 울려요.<br />종을 눌러 예측 알림을 확인하세요.</p>
+      <p style={{ color: "#8B95A1", fontSize: 15.5, lineHeight: 1.65, margin: "0 auto 22px", maxWidth: 520, textAlign: "center" }}>증권사 앱을 쓰는 중 위험 순간이 오면 여기서 울려요.<br />종을 눌러 예측 알림을 확인하세요.</p>
 
       <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 8 }}>
         <Toggle id="stop" label="손절실패 시나리오" on={hasStop} />
         <Toggle id="entry" label="진입오류 시나리오" on={hasEntry} />
       </div>
       <div style={{ textAlign: "center", fontSize: 12.5, color: opened ? "#B0B8C1" : accent, fontWeight: 600, marginBottom: 18, minHeight: 18 }}>
-        {opened ? "예측 알림이 도착했어요" : "🔔 앱 우상단의 종이 울리고 있어요 — 눌러보세요"}
+        {opened ? "예측 알림이 도착했어요" : "🔔 앱 우상단의 종이 울리고 있어요. 눌러보세요"}
       </div>
 
       <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-start", gap: opened ? 22 : 0, transition: "gap .45s cubic-bezier(.4,0,.2,1)" }}>
@@ -1148,7 +1148,7 @@ function statsFromTrades(trades: Trade[]): Winners | null {
 
 // 원화 축약: 1.2억원 / 1,234만원 / 5,600원
 function won(n?: number | null): string {
-  if (n == null) return "—";
+  if (n == null) return "-";
   const a = Math.abs(n);
   if (a >= 1e8) return (n / 1e8).toFixed(a >= 1e9 ? 0 : 1).replace(/\.0$/, "") + "억원";
   if (a >= 1e4) return Math.round(n / 1e4).toLocaleString() + "만원";

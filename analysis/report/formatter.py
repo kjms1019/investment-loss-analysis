@@ -22,7 +22,7 @@ def to_markdown(summary: LossReportSummary) -> str:
     lines.append(f"- 평균 점수: {summary.avg_score}")
     lines.append("")
     for item in summary.items:
-        lines.append(f"## {item.name}({item.code}) — {item.agent_id} / {item.label}")
+        lines.append(f"## {item.name}({item.code}) · {item.agent_id} / {item.label}")
         lines.append(item.narrative or "(narrative 없음)")
         if item.classifier_entry_score is not None or item.classifier_stop_score is not None:
             lines.append(

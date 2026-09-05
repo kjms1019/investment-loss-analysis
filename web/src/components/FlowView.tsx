@@ -4,10 +4,10 @@ import { TYPE_META } from "@/lib/flow";
 const TYPES: (PsychType | "other")[] = ["revenge", "overtrading", "disposition", "other"];
 
 function pct(x: number | null) {
-  return x == null ? "—" : `${x > 0 ? "+" : ""}${x.toFixed(2)}%`;
+  return x == null ? "-" : `${x > 0 ? "+" : ""}${x.toFixed(2)}%`;
 }
 function hold(m: number | null) {
-  if (m == null) return "—";
+  if (m == null) return "-";
   return m >= 1440 ? `${(m / 1440).toFixed(1)}일` : `${Math.round(m)}분`;
 }
 

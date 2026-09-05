@@ -33,15 +33,27 @@ def _narrative(cycle: Cycle, signals: dict, score: float, shadow_score: float = 
         )
 
     method_ko = _STOP_METHOD_KO.get(cycle.stop_method, cycle.stop_method)
+    # 시간 순서대로 적는다: 돌파 → 지연 → 최대낙폭 → 청산.
+    # 예전에는 돌파 시점의 손실률 자리에 MAE(보유 중 최대 낙폭)를 넣었는데,
+    # MAE 는 보통 돌파일이 아닌 더 나중에 찍히고 실현손익보다 깊다. 그래서
+    # "-5.6%로 넘겼지만 … 손실이 -4.6%까지 커졌습니다" 처럼 더 작은 수로
+    # '커졌다'고 말하는 문장이 나왔다.
     parts = [
-        f"{cycle.breach_date.strftime('%m월 %d일')}에 {cycle.MAE_pct:.1f}%로 "
+        f"{cycle.breach_date.strftime('%m월 %d일')}에 "
         f"손절 기준({cycle.stop_pct:.1f}%, {method_ko})을 넘겼지만"
     ]
     if cycle.delay_days > 0:
         parts.append(f"{cycle.delay_days}영업일을 더 들고 있었고,")
     if cycle.avg_down_count > 0:
         parts.append(f"그 사이 {cycle.avg_down_count}번 더 사들이면서")
-    parts.append(f"손실이 {cycle.realized_return:.1f}%까지 커졌습니다.")
+    # MAE 와 실현손익이 사실상 같으면(최저점 근처에서 청산) 한 번만 말한다.
+    if abs(cycle.MAE_pct - cycle.realized_return) < 0.1:
+        parts.append(f"손실이 {cycle.realized_return:.1f}%로 확정됐습니다.")
+    else:
+        parts.append(
+            f"손실이 최대 {cycle.MAE_pct:.1f}%까지 커졌다가 "
+            f"{cycle.realized_return:.1f}%로 청산됐습니다."
+        )
     return " ".join(parts)
 
 

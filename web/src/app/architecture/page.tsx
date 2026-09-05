@@ -25,7 +25,7 @@ type Tab = "analysis" | "solution";
 
 export default function ArchitecturePage() {
   const [active, setActive] = useState<Set<string>>(new Set());
-  const [note, setNote] = useState("대기 중 — 데모에서 단계를 진행하면 여기에 켜집니다");
+  const [note, setNote] = useState("대기 중. 데모에서 단계를 진행하면 여기에 켜집니다");
   const [tab, setTab] = useState<Tab>("analysis");
   const autoTab = useRef(true);
 

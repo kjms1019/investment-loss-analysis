@@ -280,7 +280,7 @@ def _fmt_state_evidence(feature: str, value, message: str) -> Optional[str]:
             return "진입 직전 20분 반등 흐름이 있었어요"
         return "진입 직전 20분 가격 변화가 크지 않았어요"
     if feature == "rsi_14":
-        return f"RSI {v:.0f} — 과열·침체 아닌 중립 구간이었어요" if v is not None else "RSI가 중립 구간이었어요"
+        return f"RSI {v:.0f}, 과열·침체 아닌 중립 구간이었어요" if v is not None else "RSI가 중립 구간이었어요"
     if feature == "range_position_20m":
         if v is not None:
             pct = round(v * 100)
@@ -311,7 +311,7 @@ def _reasons_dto(it: LossReportItem) -> dict:
             # 손절선까지 닿지도 않은 손실 — '손절실패'라 부르기엔 약하다. 정직하게 표기.
             band = (f"손절선({sp:.1f}%)까지는 닿지 않았어요"
                     + (f" (최대 {mae:.1f}%)" if mae is not None else ""))
-            why.append({"text": band + " — 손절실패 강도는 약합니다", "strong": False})
+            why.append({"text": band + ", 손절실패 강도는 약합니다", "strong": False})
             if ret is not None:
                 why.append({"text": f"다만 {ret:.1f}%로 손실을 확정하고 마감했어요", "strong": False})
         else:
@@ -336,7 +336,7 @@ def _reasons_dto(it: LossReportItem) -> dict:
                 why.append({"text": nm + tail, "strong": (c.get("contribution_to_score") or 0) >= 10})
         # 뚜렷한 진입오류 기여요인이 없으면(normal_entry) 솔직히 밝히고, 진입 시점 시황으로 보강.
         if not contribs:
-            why.append({"text": "뚜렷한 진입오류 신호는 약했어요 — 대신 진입 시점 시황을 짚어볼게요", "strong": False})
+            why.append({"text": "뚜렷한 진입오류 신호는 약했어요. 대신 진입 시점 시황을 짚어볼게요", "strong": False})
         sc = raw.get("state_classification") or {}
         st = _STATE_KO.get(sc.get("primary_state"))  # 알 수 없는 상태(insufficient_data 등)는 숨김
         if st:
@@ -935,7 +935,7 @@ def _stop_alert_risk(h: dict) -> dict:
     name, stop, pct = h["name"], h["stop"], h["pct"]
     above = h["current_price"] > stop
     if above:
-        msg = f"{name}이(가) 손절선 ₩{stop:,}에 가까워지고 있어요. 당신은 손절을 미루는 경향이 있어요 — 이번엔 미리 정한 손절선을 꼭 지키세요."
+        msg = f"{name}이(가) 손절선 ₩{stop:,}에 가까워지고 있어요. 당신은 손절을 미루는 경향이 있어요. 이번엔 미리 정한 손절선을 꼭 지키세요."
     else:
         msg = f"{name}이(가) 손절선 ₩{stop:,}을 막 건드렸어요. 더 버티지 말고 지금 손절선을 지키세요."
     return {"level": "high", "score": 88,

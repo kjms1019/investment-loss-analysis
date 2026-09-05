@@ -14,7 +14,8 @@ from analysis.llm import generate
 _SYSTEM = """You write short Korean alerts for a stock-trading reflection service.
 Use only the supplied JSON facts: timing, problem type, risk level, reasons,
 stock code, and unrealized return. Do not invent numbers or advice. Avoid blame
-and direct buy/sell instructions. Output only 1-2 user-facing Korean sentences."""
+and direct buy/sell instructions. Never use em dashes or en dashes; separate
+clauses with commas or periods. Output only 1-2 user-facing Korean sentences."""
 
 _PROBLEM_KR = {
     "entry_error": "\uc9c4\uc785\uc624\ub958",
