@@ -782,6 +782,28 @@ def _downsample_df(df, max_points: int = 70):
     return df.iloc[idx].reset_index(drop=True)
 
 
+def _breach_onset(closes: list, stop: int, series: list) -> Optional[dict]:
+    """지금 이 손절선 이탈이 '시작된' 지점.
+
+    예전에는 보유 전 구간에서 맨 처음 손절선을 밑돈 지점을 찍었다. 그런데 이 화면은
+    실시간 경고다. 한 달 전에 한 번 뚫고, 반등해 올라왔다가, 며칠 전에 다시 내려온
+    종목이면 마커가 한 달 전에 남는다. 옆의 문구는 "막 건드렸어요"라고 말하는데
+    차트는 과거를 가리키니 서로 어긋난다(기업은행: 마커 5/18, 실제 이탈 시작 6/22).
+
+    그래서 마지막으로 손절선 위에 있던 봉의 바로 다음 봉을 쓴다. 지금 이탈이
+    언제부터 이어지고 있는지가 경고의 근거이기 때문이다.
+    지금은 손절선 위라면(경고가 아직 '근접' 단계) 가장 최근에 밑돌았던 지점을 쓴다.
+    """
+    if not closes:
+        return None
+    if closes[-1] <= stop:
+        last_above = next((i for i in range(len(closes) - 1, -1, -1) if closes[i] > stop), None)
+        bi = 0 if last_above is None else last_above + 1
+    else:
+        bi = next((i for i in range(len(closes) - 1, -1, -1) if closes[i] <= stop), None)
+    return {"i": bi, "t": series[bi]["t"]} if bi is not None else None
+
+
 def _alert_chart(code: str, *, kind: str, at: _dt, entry_at=None) -> Optional[dict]:
     """실시간 주식창 차트: 이벤트 직전 구간 분봉 + 마커.
 
@@ -818,9 +840,7 @@ def _alert_chart(code: str, *, kind: str, at: _dt, entry_at=None) -> Optional[di
             stop = round(ep * (1 - _STOP_LOSS_PCT))
             out["stop"] = stop
             out["breached"] = closes[-1] <= stop
-            bi = next((i for i, c in enumerate(closes) if c <= stop), None)
-            if bi is not None:
-                out["breach"] = {"i": bi, "t": series[bi]["t"]}
+            out["breach"] = _breach_onset(closes, stop, series)
     return out
 
 
@@ -937,7 +957,9 @@ def _stop_alert_risk(h: dict) -> dict:
     if above:
         msg = f"{name}이(가) 손절선 ₩{stop:,}에 가까워지고 있어요. 당신은 손절을 미루는 경향이 있어요. 이번엔 미리 정한 손절선을 꼭 지키세요."
     else:
-        msg = f"{name}이(가) 손절선 ₩{stop:,}을 막 건드렸어요. 더 버티지 말고 지금 손절선을 지키세요."
+        # "막 건드렸어요"는 한 번 스친 것처럼 들린다. 실제로는 손절선 아래로 내려온 뒤
+        # 계속 밑에 있는 상태이고, 차트의 돌파 마커도 그 시작점을 가리킨다.
+        msg = f"{name}이(가) 손절선 ₩{stop:,} 아래로 내려왔어요. 더 버티지 말고 지금 손절선을 지키세요."
     return {"level": "high", "score": 88,
             "reasons": ["손절선 근접", "최근 하락 추세", f"보유 손익 {pct:+.1f}%"], "message": msg}
 

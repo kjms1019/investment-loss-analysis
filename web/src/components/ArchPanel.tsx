@@ -43,7 +43,6 @@ export default function ArchPanel({ variant = "page" }: { variant?: ArchVariant 
   const [active, setActive] = useState<Set<string>>(new Set());
   const [note, setNote] = useState("대기 중. 데모에서 단계를 진행하면 여기에 켜집니다");
   const [tab, setTab] = useState<Tab>("analysis");
-  const autoTab = useRef(true);
 
   const A = (id: string) => active.has(id);
   const any = active.size > 0;
@@ -53,7 +52,11 @@ export default function ArchPanel({ variant = "page" }: { variant?: ArchVariant 
       const nodes = Array.isArray(m.nodes) ? m.nodes : [];
       setActive(new Set(nodes));
       if (m.note != null) setNote(m.note || " ");
-      if (autoTab.current && nodes.length) {
+      // 앱이 있는 쪽으로 항상 따라간다. 예전에는 탭을 한 번 누르면 자동 추적이
+      // 영영 꺼져서, 실시간 알림으로 넘어가도 분석단 화면에 머문 채 아무 노드도
+      // 켜지지 않았다. 탭 버튼은 단계 사이에 다른 흐름을 둘러보는 용도이고,
+      // 앱이 다음 단계로 가면 다시 그쪽으로 돌아온다.
+      if (nodes.length) {
         if (nodes.some((n) => n.startsWith("s-"))) setTab("solution");
         else if (nodes.some((n) => n.startsWith("a-"))) setTab("analysis");
       }
@@ -99,7 +102,7 @@ export default function ArchPanel({ variant = "page" }: { variant?: ArchVariant 
         <span style={{ fontSize: side ? 13 : 15, fontWeight: 700, color: TEXT }}>{side ? "아키텍처 추적" : "소프트웨어 아키텍처 · 실시간 추적"}</span>
         <div style={{ display: "flex", gap: 6, marginLeft: side ? "auto" : 10 }}>
           {([["analysis", side ? "분석단" : "분석단 · 진단"], ["solution", side ? "솔루션단" : "솔루션단 · 실시간"]] as const).map(([id, label]) => (
-            <button key={id} onClick={() => { autoTab.current = false; setTab(id); }}
+            <button key={id} onClick={() => setTab(id)}
               style={{ cursor: "pointer", fontSize: side ? 11.5 : 13, fontWeight: tab === id ? 700 : 500, borderRadius: 9, padding: side ? "5px 9px" : "7px 14px", border: "1px solid " + (tab === id ? ACCENT : "#2C3A56"), background: tab === id ? "rgba(" + GLOW + ",.16)" : "transparent", color: tab === id ? "#fff" : "#9DB2C9" }}>
               {label}
             </button>

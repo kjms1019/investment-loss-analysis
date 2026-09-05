@@ -116,7 +116,7 @@ export default function Home() {
       case "upload":
         archSet(["a-input"], "① 거래내역 입력 · CSV 업로드"); break;
       case "analyze":
-        if (showResult) { archSet(["a-route"], "③ 빈도 1위 = 금액 1위? · 라우팅 판단"); }
+        if (showResult) { archSet(["a-route"], "③ 빈도 1위? or 금액 1위? · 라우팅 판단"); }
         else {
           const m: [string[], string][] = [
             [["a-orch", "a-db1"], "거래내역 파싱 → 분석 DB 적재"],
@@ -358,7 +358,7 @@ function Analyze({ step, done, trades, all, onSeeResult, onGo }: {
     if (!done) return;
     if (calling) archSet(["a-agent"], "④ 도메인 에이전트 호출");
     else if (pick) archSet(["a-route", "a-userpick"], "사용자 선택 · 무엇부터 볼지");
-    else archSet(["a-route"], "③ 빈도 1위 = 금액 1위? · 라우팅 판단");
+    else archSet(["a-route"], "③ 빈도 1위? or 금액 1위? · 라우팅 판단");
   }, [done, pick, calling]);
 
   // 전체 거래 차트 — 단계가 진행될수록 '색인'이 점진적으로 들어간다.
