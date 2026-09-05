@@ -6,6 +6,7 @@ import {
 } from "@/lib/api";
 import { DOMAIN, SEV_LABEL, DomainIcon, Logo, Section, LossBars, TradeMiniChart, AlertMiniChart } from "@/components/why/ui";
 import { archSet } from "@/lib/archChannel";
+import ArchPanel, { ARCH_SIDE_W } from "@/components/ArchPanel";
 
 const ROUTES = ["login", "consent", "upload", "analyze", "dashboard", "trades", "profile", "alerts"] as const;
 type Screen = (typeof ROUTES)[number];
@@ -18,6 +19,19 @@ const NAV_A = [
   { id: "profile", num: "⑤", label: "내 성향" },
 ] as const;
 const NAV_B = [{ id: "alerts", num: "⑥", label: "실시간 알림" }] as const;
+
+/** 뷰포트가 기준 폭 이상인지. 아키텍처 패널을 나란히 놓을 자리가 되는지 판단용. */
+function useMinWidth(min: number): boolean {
+  const [ok, setOk] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(`(min-width:${min}px)`);
+    const sync = () => setOk(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, [min]);
+  return ok;
+}
 
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("login");
@@ -131,8 +145,19 @@ export default function Home() {
   const showNav = !(screen === "login" || screen === "consent");
   const curUserName = users.find((u) => u.id === user)?.name || "";
 
+  // 아키텍처 패널: 발표 때는 창을 두 개 띄워 옆에 놓았지만 심사위원은 그럴 수 없다.
+  // 그래서 같은 화면 우측에 붙인다. 로그인·동의 화면에서는 보여줄 게 없어 접어둔다.
+  //
+  // 넓은 화면에서는 본문에 패널 폭만큼 오른쪽 여백을 줘서 화면이 통째로 왼쪽으로
+  // 밀려나게 한다(본문 자체의 폭·비율은 건드리지 않는다). 화면이 좁으면 여백을
+  // 주는 순간 본문이 찌그러지므로, 그때는 패널을 위에 겹쳐 띄운다.
+  const [archOpen, setArchOpen] = useState(true);
+  const roomy = useMinWidth(1680);  // 본문 1080 + 패널 560 + 여백
+  const showArch = archOpen && showNav;
+  const archInline = showArch && roomy;
+
   return (
-    <div style={{ minHeight: "100vh", background: "#fff", color: "#191F28" }}>
+    <div style={{ minHeight: "100vh", background: "#fff", color: "#191F28", paddingRight: archInline ? ARCH_SIDE_W : 0, transition: "padding-right .18s ease" }}>
       {showNav && (
         <header style={{ position: "sticky", top: 0, zIndex: 20, background: "rgba(255,255,255,.9)", backdropFilter: "blur(10px)", borderBottom: "1px solid #F2F4F6" }}>
           <div style={{ maxWidth: 1080, margin: "0 auto", padding: "12px clamp(16px,4vw,40px)", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
@@ -153,6 +178,13 @@ export default function Home() {
                   <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#F5500A" }} />{curUserName}
                 </span>
               )}
+              <button
+                onClick={() => setArchOpen((v) => !v)}
+                title="에이전트 아키텍처를 화면 오른쪽에서 실시간으로 따라갑니다"
+                style={{ marginLeft: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 9, padding: "7px 11px", fontSize: 13, fontWeight: 600, border: "1px solid " + (archOpen ? "#0B2E59" : "#E5E8EB"), background: archOpen ? "#0B2E59" : "#fff", color: archOpen ? "#fff" : "#4E5968" }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: archOpen ? "#FF6A2B" : "#B0B8C1" }} />
+                아키텍처
+              </button>
             </nav>
           </div>
         </header>
@@ -184,6 +216,20 @@ export default function Home() {
         {screen === "profile" && <ProfileView disp={disp} userName={curUserName} />}
         {screen === "alerts" && <AlertsView data={hold} />}
       </main>
+
+      {showArch && (
+        <aside
+          aria-label="에이전트 아키텍처 실시간 추적"
+          style={{
+            position: "fixed", top: 0, right: 0, bottom: 0, width: ARCH_SIDE_W,
+            zIndex: 30, borderLeft: "1px solid #202D44",
+            // 나란히 놓일 때는 본문 옆에 붙은 한 덩어리로 보이게 그림자를 뺀다.
+            // 겹쳐 뜰 때만 위에 떠 있다는 걸 그림자로 알린다.
+            boxShadow: archInline ? "none" : "-18px 0 44px rgba(11,46,89,.22)",
+          }}>
+          <ArchPanel variant="side" />
+        </aside>
+      )}
     </div>
   );
 }
