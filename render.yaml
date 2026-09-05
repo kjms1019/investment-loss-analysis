@@ -11,7 +11,10 @@ services:
   - type: web
     name: mirae-loss-api
     runtime: python
-    plan: free
+    # starter($7) — free 는 0.1 CPU 에 15분 무활동 시 잠든다. pandas/pyarrow 임포트만으로도
+    # 콜드스타트가 길어져, 심사위원이 첫 클릭에서 1분 넘게 기다리는 상황이 된다.
+    # 심사 기간(9/7~9/11) 상시 접근이 결격 요건이라 여기서 아끼지 않는다.
+    plan: starter
     region: singapore
     buildCommand: |
       pip install -r requirements-api.txt
