@@ -1100,7 +1100,13 @@ function AlertsView({ data }: { data: HoldingsResp | null }) {
   const [opened, setOpened] = useState(false);
   const holdings = data?.holdings ?? [];
   const plans = data?.plans ?? [];
-  const stopHolding = holdings.find((h) => h.status === "alert") ?? holdings[0];
+  // 경고 카드에 올릴 보유. status==='alert' 가 없을 때 그냥 holdings[0] 을 집으면
+  // 크게 오른 종목이 뽑혀서, 손절선이 가격대보다 한참 아래에 떨어져 그려지고
+  // "손절실패 징후 감지"라는 제목과도 어긋난다. 손절선에 가장 가까운(또는 이미 밑인)
+  // 종목을 고른다.
+  const stopHolding =
+    holdings.find((h) => h.status === "alert") ??
+    [...holdings].sort((a, b) => a.current_price / a.stop - b.current_price / b.stop)[0];
   const entryPlan = plans[0] ?? null;
   const hasStop = !!stopHolding, hasEntry = !!entryPlan;
   // 사용자/시나리오 바뀌면 닫고, 가능한 시나리오로 기본 전환

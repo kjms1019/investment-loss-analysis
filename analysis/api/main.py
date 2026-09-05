@@ -672,6 +672,10 @@ def health() -> dict:
     return {"ok": True}
 
 
+# 데모 목록에서 감출 사용자. 데이터는 그대로 두고 고르는 화면에서만 뺀다.
+_HIDDEN_DEMO_USERS = {"구준모", "권도영"}
+
+
 @app.get("/api/users")
 def users() -> list[dict]:
     st = UserProfileStorage(db_path=_PROFILE_DB)
@@ -679,7 +683,7 @@ def users() -> list[dict]:
         rows = st.conn.execute("select distinct user_id from user_profiles order by user_id").fetchall()
     finally:
         st.close()
-    return [{"id": r[0], "name": r[0]} for r in rows]
+    return [{"id": r[0], "name": r[0]} for r in rows if r[0] not in _HIDDEN_DEMO_USERS]
 
 
 @app.get("/api/dashboard/{user_id}")
@@ -900,7 +904,7 @@ def _all_demo_users() -> tuple:
         conn = sqlite3.connect(_PROFILE_DB)
         rows = conn.execute("select distinct user_id from user_profiles order by user_id").fetchall()
         conn.close()
-        return tuple(r[0] for r in rows)
+        return tuple(r[0] for r in rows if r[0] not in _HIDDEN_DEMO_USERS)
     except Exception:  # noqa: BLE001
         return tuple()
 

@@ -133,8 +133,16 @@ export function AlertMiniChart({ chart, color }: { chart: AlertChart; color: str
   const cs = chart.series.map((s) => s.c);
   const n = cs.length;
   if (n < 2) return null;
-  const extra = [chart.marker.price, ...(chart.stop != null ? [chart.stop] : []), ...(chart.entry ? [chart.entry.price] : [])];
-  let ymin = Math.min(...cs, ...extra), ymax = Math.max(...cs, ...extra);
+  // 손절선은 진입가 −5% 로 고정이라, 크게 오른 보유는 손절선이 가격대보다 한참 아래로
+  // 내려간다(하나금융지주 +35.5%: 손절선이 현재가보다 30% 아래). 그걸 y축에 억지로
+  // 넣으면 가격선이 위쪽에 납작하게 눌리고 점선만 바닥에 동떨어져 그려진다.
+  // 이럴 때는 축에서 빼고 선도 그리지 않는다. 대신 아래에 있다는 사실만 작게 적는다.
+  const priceLo = Math.min(...cs, chart.marker.price, ...(chart.entry ? [chart.entry.price] : []));
+  const priceHi = Math.max(...cs, chart.marker.price, ...(chart.entry ? [chart.entry.price] : []));
+  const stopFarBelow = chart.stop != null && chart.stop < priceLo - (priceHi - priceLo) * 0.25;
+  const stopOnChart = chart.stop != null && !stopFarBelow;
+  let ymin = stopOnChart ? Math.min(priceLo, chart.stop!) : priceLo;
+  let ymax = stopOnChart ? Math.max(priceHi, chart.stop!) : priceHi;
   const pad = (ymax - ymin) * 0.08 || 1; ymin -= pad; ymax += pad;
   const X = (i: number) => padL + (i / (n - 1)) * plotW;
   const Y = (p: number) => padT + (1 - (p - ymin) / (ymax - ymin)) * plotH;
@@ -145,12 +153,15 @@ export function AlertMiniChart({ chart, color }: { chart: AlertChart; color: str
   const tint = isStop ? "#E7ECF4" : "#FEF1DF";
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block" }} preserveAspectRatio="xMidYMid meet">
-      {chart.stop != null && (
+      {stopOnChart && (
         <g>
-          <line x1={padL} x2={padL + plotW} y1={Y(chart.stop)} y2={Y(chart.stop)} stroke="#E2574C" strokeWidth={1} strokeDasharray="4 3" />
-          <text x={padL + plotW + 4} y={Y(chart.stop) + 3} fontSize={9} fill="#E2574C">손절선</text>
-          <text x={padL + plotW + 4} y={Y(chart.stop) + 14} fontSize={9} fill="#E2574C">{wonK(chart.stop)}</text>
+          <line x1={padL} x2={padL + plotW} y1={Y(chart.stop!)} y2={Y(chart.stop!)} stroke="#E2574C" strokeWidth={1} strokeDasharray="4 3" />
+          <text x={padL + plotW + 4} y={Y(chart.stop!) + 3} fontSize={9} fill="#E2574C">손절선</text>
+          <text x={padL + plotW + 4} y={Y(chart.stop!) + 14} fontSize={9} fill="#E2574C">{wonK(chart.stop!)}</text>
         </g>
+      )}
+      {stopFarBelow && (
+        <text x={padL + plotW + 4} y={padT + plotH} fontSize={8.5} fill="#B0B8C1">손절선 {wonK(chart.stop!)} ↓</text>
       )}
       <polygon points={area} fill={tint} opacity={0.6} />
       <polyline points={line} fill="none" stroke={color} strokeWidth={1.6} strokeLinejoin="round" />
