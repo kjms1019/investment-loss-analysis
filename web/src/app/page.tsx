@@ -8,7 +8,7 @@ import { DOMAIN, SEV_LABEL, DomainIcon, Logo, Section, LossBars, TradeMiniChart,
 import { archSet } from "@/lib/archChannel";
 import ArchPanel, { ARCH_SIDE_W } from "@/components/ArchPanel";
 
-const ROUTES = ["login", "consent", "upload", "analyze", "dashboard", "trades", "profile", "alerts"] as const;
+const ROUTES = ["intro", "login", "consent", "upload", "analyze", "dashboard", "trades", "profile", "alerts"] as const;
 type Screen = (typeof ROUTES)[number];
 
 const NAV_A = [
@@ -34,7 +34,7 @@ function useMinWidth(min: number): boolean {
 }
 
 export default function Home() {
-  const [screen, setScreen] = useState<Screen>("login");
+  const [screen, setScreen] = useState<Screen>("intro");
   const [users, setUsers] = useState<UserItem[]>([]);
   const [user, setUser] = useState<string>("");
   const [dash, setDash] = useState<Dashboard | null>(null);
@@ -64,10 +64,14 @@ export default function Home() {
   useEffect(() => {
     const sync = () => {
       const raw = (window.location.hash || "").replace(/^#\/?/, "");
-      let id = (ROUTES.includes(raw as Screen) ? raw : "login") as Screen;
-      // 로그인 → 약관 동의를 직접 거치지 않으면 이후 화면으로 못 넘어간다(새로고침·URL 직접입력 포함)
-      if (id !== "login" && !authedRef.current) id = "login";
-      else if (id !== "login" && id !== "consent" && !consentRef.current) id = "consent";
+      // 해시가 없거나 모르는 값이면 서비스 소개로. 링크만 받고 들어온 사람이
+      // 맥락 없이 로그인 폼부터 마주치지 않게 한다.
+      let id = (ROUTES.includes(raw as Screen) ? raw : "intro") as Screen;
+      // 소개·로그인은 누구나 볼 수 있고, 그 뒤로는 동의를 직접 거쳐야 넘어간다
+      // (새로고침·URL 직접입력 포함).
+      const open = id === "intro" || id === "login";
+      if (!open && !authedRef.current) id = "intro";
+      else if (!open && id !== "consent" && !consentRef.current) id = "consent";
       if (id !== raw) { window.location.hash = "#/" + id; return; }
       setScreen(id);
     };
@@ -110,6 +114,7 @@ export default function Home() {
   // ── 아키텍처 페이지(/architecture) 실시간 연동: 화면·단계에 맞는 노드를 broadcast ──
   useEffect(() => {
     switch (screen) {
+      case "intro":
       case "login":
       case "consent":
         archSet([], "대기 중. 데모를 시작하면 켜집니다"); break;
@@ -142,7 +147,7 @@ export default function Home() {
     }
   }, [screen, progressStep, showResult]);
 
-  const showNav = !(screen === "login" || screen === "consent");
+  const showNav = !(screen === "intro" || screen === "login" || screen === "consent");
   const curUserName = users.find((u) => u.id === user)?.name || "";
 
   // 아키텍처 패널: 발표 때는 창을 두 개 띄워 옆에 놓았지만 심사위원은 그럴 수 없다.
@@ -195,7 +200,8 @@ export default function Home() {
           백엔드 연결 오류: {err}. <b>uvicorn analysis.api.main:app --port 8000</b> 실행 중인지 확인하세요.
         </div>}
 
-        {screen === "login" && <Login onLogin={() => { setAuthed(true); go("consent"); }} onDemo={() => { if (users[0]) setUser(users[0].id); setAuthed(true); go("consent"); }} />}
+        {screen === "intro" && <Intro onStart={() => go("login")} />}
+        {screen === "login" && <Login onLogin={() => { setAuthed(true); go("consent"); }} onDemo={() => { if (users[0]) setUser(users[0].id); setAuthed(true); go("consent"); }} onBack={() => go("intro")} />}
         {screen === "consent" && <Consent agreed={consentAgreed} toggle={() => setConsentAgreed((v) => !v)} onBack={() => go("login")} onStart={() => { setConsentDone(true); go("upload"); }} />}
         {screen === "upload" && <Upload users={users} user={user} setUser={setUser} onStart={() => { analyzedRef.current = false; setProgressStep(0); setShowResult(false); go("analyze"); }} />}
         {screen === "analyze" && <Analyze step={progressStep} done={showResult} trades={trades} all={allTrades} onSeeResult={() => setShowResult(true)} onGo={(d) => { setDxDomain(d); go("dashboard"); }} />}
@@ -243,13 +249,226 @@ function NavBtn({ active, num, label, onClick }: { active: boolean; num: string;
   );
 }
 
+// ── INTRO (첫 화면) ──────────────────────────────────────────────────────────
+// 발표 자리에서는 PPT로 맥락을 다 깔고 이 서비스를 열었다. 심사위원은 URL 만 받고
+// 들어오므로 그 맥락이 통째로 비어 있다. 그래서 로그인 앞에 소개 화면을 세운다.
+//
+// 읽히는 소개가 아니라 만져지는 소개로 만든다. 이 서비스의 핵심 두 가지 —
+// "손실을 두 모양으로 나눈다"와 "시장 탓을 먼저 뺀다" — 는 설명을 읽는 것보다
+// 직접 값을 바꿔보는 편이 훨씬 빨리 이해된다.
+
+/** 손실 경로 두 유형의 모양. 실제 분류기가 군집으로 나눈 두 축을 단순화해 그린다. */
+const LOSS_SHAPES = {
+  entry: {
+    label: "진입오류",
+    quote: "살 때부터 잘못 샀다",
+    color: "#B5650A",
+    tint: "#FDF3E3",
+    desc: "고점 추격, 과열 종목 추격 진입. 매수 당일부터 손실이 쌓입니다.",
+    axis: "손실이 초반에 몰립니다",
+    path: [82, 74, 55, 40, 33, 30, 34, 31, 28, 32, 30, 27, 31, 29, 30],
+    stop: null as number | null,
+  },
+  cut: {
+    label: "손절실패",
+    quote: "끊어야 할 때 못 끊었다",
+    color: "#0B2E59",
+    tint: "#EAF0F8",
+    desc: "손절선을 이탈했는데 버티거나, 물타기로 손실을 키웁니다.",
+    axis: "최저점이 뒤에 옵니다",
+    path: [82, 86, 90, 84, 88, 80, 72, 66, 58, 47, 38, 30, 24, 18, 15],
+    stop: 62,
+  },
+};
+
+/** 손실 경로 미니 차트. 값은 0(아래) ~ 100(위) 상대 스케일. */
+function ShapeChart({ pts, color, stop }: { pts: number[]; color: string; stop: number | null }) {
+  const W = 300, H = 108, padX = 6, padY = 10;
+  const X = (i: number) => padX + (i / (pts.length - 1)) * (W - padX * 2);
+  const Y = (v: number) => padY + (1 - v / 100) * (H - padY * 2);
+  const line = pts.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block" }}>
+      <polygon points={`${padX},${H - padY} ${line} ${W - padX},${H - padY}`} fill={color} opacity={0.09} />
+      {stop != null && (
+        <>
+          <line x1={padX} x2={W - padX} y1={Y(stop)} y2={Y(stop)} stroke="#E2574C" strokeWidth={1} strokeDasharray="4 3" />
+          <text x={W - padX} y={Y(stop) - 5} fontSize={9} fill="#E2574C" textAnchor="end">손절선</text>
+        </>
+      )}
+      <polyline points={line} fill="none" stroke={color} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={X(0)} cy={Y(pts[0])} r={3.4} fill="#fff" stroke={color} strokeWidth={2} />
+      <text x={X(0) + 5} y={Y(pts[0]) - 7} fontSize={9.5} fill="#8B95A1">매수</text>
+    </svg>
+  );
+}
+
+function Intro({ onStart }: { onStart: () => void }) {
+  const navy = "#0B2E59", orange = "#F5500A", gray = "#8B95A1";
+  const [dom, setDom] = useState<"entry" | "cut">("entry");
+  const [mine, setMine] = useState(-8);      // 내 손익 %
+  const [market, setMarket] = useState(-7);  // 같은 기간 KOSPI %
+  const [step, setStep] = useState(1);
+
+  const shape = LOSS_SHAPES[dom];
+  const alpha = +(mine - market).toFixed(1);
+  const isMine = alpha <= -2;   // 복기 대상 판정 기준(데모용 표시값)
+
+  const card: CSSProperties = { background: "#F8F9FA", borderRadius: 16, padding: "22px 24px" };
+  const secLabel: CSSProperties = { fontSize: 13, fontWeight: 700, color: orange, marginBottom: 10 };
+  const cta: CSSProperties = { ...primaryBtn, width: "auto", padding: "16px 34px", fontSize: 16.5 };
+
+  const STEPS = [
+    ["①", "거래내역", "매수→매도를 한 사이클로 묶습니다. 복기의 최소 단위입니다."],
+    ["②", "시장 탓 제거", "초과손실 α로 시장 요인을 걷어내고 '내 탓'인 손실만 남깁니다."],
+    ["③", "2-way 분류", "학습된 분류기가 진입오류·손절실패 점수를 매겨 원인을 가릅니다."],
+    ["④", "원인 설명", "그 판단의 근거가 된 피처를 그대로 문장으로 풀어 보여줍니다."],
+    ["⑤", "실시간 경고", "같은 실수가 반복되려는 순간, 매수 직전과 손절선 이탈 시점에 알립니다."],
+  ];
+
+  return (
+    <div style={{ maxWidth: 940, margin: "0 auto", padding: "10px 2px 60px" }}>
+      {/* 히어로 */}
+      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 28, flexWrap: "wrap" }}>
+        <Logo size={34} /><div style={{ fontWeight: 700, fontSize: 18 }}>왜 잃었지?</div>
+        <span style={{ marginLeft: 6, fontSize: 12.5, fontWeight: 600, color: navy, background: "#EAF0F8", borderRadius: 7, padding: "5px 10px" }}>
+          주식 손실 원인 진단 멀티 에이전트
+        </span>
+      </div>
+
+      <h1 style={{ fontSize: "clamp(28px,5vw,42px)", fontWeight: 800, color: navy, lineHeight: 1.28, margin: "0 0 16px", letterSpacing: -0.5 }}>
+        얼마 잃었는지는 아는데,<br /><span style={{ color: orange }}>왜 잃었는지는</span> 모릅니다.
+      </h1>
+      <p style={{ fontSize: "clamp(15.5px,2vw,18px)", color: "#4E5968", lineHeight: 1.7, margin: "0 0 28px", maxWidth: 680 }}>
+        손실은 기록되는데 이유는 기록되지 않습니다. 그래서 같은 실수가 반복됩니다.<br />
+        <b style={{ color: "#191F28", fontWeight: 600 }}>거래내역을 1분봉으로 되돌려 손실의 원인을 진단하고, 같은 실수가 반복되려는 순간 미리 경고합니다.</b>
+      </p>
+      <button onClick={onStart} style={cta}>서비스 이용하기</button>
+      <div style={{ fontSize: 13.5, color: gray, margin: "12px 0 46px" }}>
+        가입 없이 예시 데이터셋으로 전체 흐름을 볼 수 있습니다.
+      </div>
+
+      {/* 인터랙션 1 — 손실의 두 모양 */}
+      <div style={secLabel}>손실의 원인을 두 가지로 나눕니다 · 눌러서 비교해 보세요</div>
+      <div style={{ ...card, marginBottom: 44 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+          {(["entry", "cut"] as const).map((k) => {
+            const on = dom === k, sh = LOSS_SHAPES[k];
+            return (
+              <button key={k} onClick={() => setDom(k)}
+                style={{ cursor: "pointer", fontSize: 14.5, fontWeight: on ? 700 : 500, borderRadius: 11, padding: "10px 18px",
+                  border: "1.5px solid " + (on ? sh.color : "#E5E8EB"), background: on ? sh.tint : "#fff", color: on ? sh.color : "#8B95A1" }}>
+                {sh.label}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 24, alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 21, fontWeight: 700, color: navy, marginBottom: 10 }}>&ldquo;{shape.quote}&rdquo;</div>
+            <div style={{ fontSize: 15, color: "#4E5968", lineHeight: 1.65, marginBottom: 14 }}>{shape.desc}</div>
+            <div style={{ display: "inline-block", fontSize: 13, fontWeight: 600, color: shape.color, background: shape.tint, borderRadius: 8, padding: "7px 12px" }}>
+              손실 경로 특징 · {shape.axis}
+            </div>
+          </div>
+          <div style={{ background: "#fff", borderRadius: 12, padding: "10px 12px 6px" }}>
+            <ShapeChart pts={shape.path} color={shape.color} stop={shape.stop} />
+            <div style={{ fontSize: 11.5, color: gray, textAlign: "center", paddingBottom: 6 }}>보유 기간 중 가격 경로 (개념도)</div>
+          </div>
+        </div>
+      </div>
+
+      {/* 인터랙션 2 — 초과손실 α 계산기 */}
+      <div style={secLabel}>먼저 시장 탓을 걷어냅니다 · 값을 움직여 보세요</div>
+      <div style={{ background: navy, borderRadius: 18, padding: "26px 28px", color: "#fff", marginBottom: 44 }}>
+        <div style={{ fontSize: "clamp(15px,2vw,18px)", fontWeight: 700, marginBottom: 20, letterSpacing: -0.2 }}>
+          초과손실 α = 절대손익 − 같은 기간 KOSPI 수익률
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 22, alignItems: "center" }}>
+          <div>
+            {([["내 손익", mine, setMine], ["같은 기간 KOSPI", market, setMarket]] as const).map(([label, val, set]) => (
+              <div key={label} style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, color: "#C7D3E2", marginBottom: 7 }}>
+                  <span>{label}</span><b style={{ color: "#fff", fontSize: 15 }}>{val > 0 ? "+" : ""}{val}%</b>
+                </div>
+                <input type="range" min={-30} max={10} step={1} value={val}
+                  onChange={(e) => set(Number(e.target.value))}
+                  style={{ width: "100%", accentColor: orange, cursor: "pointer" }} />
+              </div>
+            ))}
+          </div>
+          <div style={{ background: "rgba(255,255,255,.07)", borderRadius: 14, padding: "18px 20px", textAlign: "center" }}>
+            <div style={{ fontSize: 13, color: "#C7D3E2", marginBottom: 6 }}>내 탓인 손실 (초과손실 α)</div>
+            <div style={{ fontSize: 34, fontWeight: 800, color: isMine ? "#FF9A66" : "#7FE3C4", letterSpacing: -1 }}>
+              {alpha > 0 ? "+" : ""}{alpha}%
+            </div>
+            <div style={{ fontSize: 13.5, color: "#C7D3E2", marginTop: 10, lineHeight: 1.5 }}>
+              {isMine ? "복기 대상입니다. 원인을 진단합니다." : "시장 요인으로 보고 복기 대상에서 제외합니다."}
+            </div>
+          </div>
+        </div>
+        <div style={{ fontSize: 13.5, color: "#9FB3CC", marginTop: 18, lineHeight: 1.6 }}>
+          이걸 거르지 않으면 시장이 무너진 날 물린 모든 사람이 실패자로 분류되고, 분석 전체가 오염됩니다.
+        </div>
+      </div>
+
+      {/* 인터랙션 3 — 파이프라인 */}
+      <div style={secLabel}>어떻게 동작하나 · 단계를 눌러 보세요</div>
+      <div style={{ marginBottom: 44 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", gap: 8, marginBottom: 14 }}>
+          {STEPS.map(([n, t], i) => {
+            const on = step === i + 1;
+            return (
+              <button key={t} onClick={() => setStep(i + 1)}
+                style={{ cursor: "pointer", textAlign: "left", borderRadius: 12, padding: "13px 14px",
+                  border: "1.5px solid " + (on ? orange : "transparent"), background: on ? "#FFF6F1" : "#F8F9FA" }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: on ? orange : "#B0B8C1", marginBottom: 4 }}>{n}</div>
+                <div style={{ fontSize: 14, fontWeight: on ? 700 : 500, color: on ? navy : "#4E5968" }}>{t}</div>
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ ...card, fontSize: 15, color: "#4E5968", lineHeight: 1.65 }}>{STEPS[step - 1][2]}</div>
+      </div>
+
+      {/* 근거 숫자 */}
+      <div style={secLabel}>무엇을 근거로 하나</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12, marginBottom: 40 }}>
+        {[
+          ["KOSPI 798종목", "1년치 1분봉 5,467만 행"],
+          ["분류기 AUC 0.839", "5-fold 교차검증 · n=5,986"],
+          ["심리 3패턴", "처분효과·과매매·리벤지 매매"],
+          ["학술 근거 기반", "임계값을 논문 실측값에 맞춤"],
+        ].map(([t, d]) => (
+          <div key={t} style={{ borderTop: "2px solid #E5E8EB", paddingTop: 13 }}>
+            <div style={{ fontSize: 16.5, fontWeight: 800, color: navy, letterSpacing: -0.3 }}>{t}</div>
+            <div style={{ fontSize: 13, color: gray, marginTop: 5, lineHeight: 1.5 }}>{d}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 마무리 */}
+      <div style={{ borderTop: "1px solid #F2F4F6", paddingTop: 32, textAlign: "center" }}>
+        <div style={{ fontSize: "clamp(18px,2.6vw,22px)", fontWeight: 700, color: navy, marginBottom: 8, lineHeight: 1.45 }}>
+          손실은 기록됩니다. 이제 이유도 기록됩니다.
+        </div>
+        <div style={{ fontSize: 14.5, color: gray, marginBottom: 22 }}>
+          매매 추천은 하지 않습니다. 지난 거래를 복기하고, 내가 정한 규칙을 지키도록 돕습니다.
+        </div>
+        <button onClick={onStart} style={cta}>서비스 이용하기</button>
+      </div>
+    </div>
+  );
+}
+
 // ── LOGIN ────────────────────────────────────────────────────────────────────
-function Login({ onLogin, onDemo }: { onLogin: () => void; onDemo: () => void }) {
+function Login({ onLogin, onDemo, onBack }: { onLogin: () => void; onDemo: () => void; onBack: () => void }) {
   const [phone, setPhone] = useState("");
   const [pw, setPw] = useState("");
   const ready = phone.trim().length > 0 && pw.length > 0;
   return (
     <div style={{ maxWidth: 400, margin: "0 auto", padding: "48px 2px 40px" }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", padding: "6px 6px 6px 0", cursor: "pointer", fontSize: 13.5, color: "#8B95A1", marginBottom: 10 }}>← 서비스 소개로</button>
       <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 40 }}><Logo size={34} /><div style={{ fontWeight: 700, fontSize: 18 }}>왜 잃었지?</div></div>
       <h1 style={{ fontSize: 26, fontWeight: 700, color: "#0B2E59", lineHeight: 1.34, margin: "0 0 10px" }}>내 거래 복기를<br />이어서 확인해 볼까요?</h1>
       <p style={{ color: "#8B95A1", fontSize: 16, lineHeight: 1.6, margin: "0 0 32px" }}>로그인하면 지난 진단 결과와 실시간 알림을 그대로 이어볼 수 있어요.</p>
