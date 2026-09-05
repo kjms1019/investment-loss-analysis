@@ -15,6 +15,9 @@ from __future__ import annotations
 import collections
 import os
 import sys
+import threading
+import time
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -31,7 +34,32 @@ from analysis.report import builder
 from analysis.report.schema import LossReportItem, LossReportSummary
 from analysis.user_profile import UserProfileStorage
 
-app = FastAPI(title="왜 잃었지? API", version="0.1.0")
+def _warm_caches() -> None:
+    """무거운 프로세스 캐시를 미리 채운다. 별도 스레드에서 돈다.
+
+    _all_alerts() 는 분봉을 전수 평가해 최초 1회가 수십 초 걸린다. 그대로 두면
+    배포 직후 처음 알림 화면을 연 사람이 그 시간을 통째로 기다리게 된다.
+    기동 직후 미리 계산해 두면 실제 사용자는 캐시된 결과만 받는다.
+    """
+    for name, fn in (("alerts", _all_alerts), ("trade_charts", _trade_charts)):
+        t0 = time.time()
+        try:
+            fn()
+        except Exception as exc:  # noqa: BLE001
+            # 워밍업 실패가 서비스 기동을 막지는 않는다. 요청 시점에 다시 시도된다.
+            print(f"[warmup] {name} 실패: {exc!r}", flush=True)
+            continue
+        print(f"[warmup] {name} 준비 완료 ({time.time() - t0:.1f}s)", flush=True)
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    # 헬스체크를 막지 않도록 데몬 스레드로 띄운다.
+    threading.Thread(target=_warm_caches, name="warmup", daemon=True).start()
+    yield
+
+
+app = FastAPI(title="왜 잃었지? API", version="0.1.0", lifespan=_lifespan)
 
 # CORS — 로컬 개발용 origin 은 항상 열고, 배포 도메인은 CORS_ORIGINS 로 추가한다.
 # (쉼표 구분. 예: CORS_ORIGINS=https://why-did-i-lose.vercel.app)
