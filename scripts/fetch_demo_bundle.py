@@ -15,8 +15,11 @@ from __future__ import annotations
 
 import os
 import shutil
+import ssl
+import subprocess
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -34,13 +37,39 @@ def already_installed() -> bool:
     return MIN1_DIR.is_dir() and any(MIN1_DIR.glob("*.parquet")) and CODES_CSV.exists()
 
 
+def _download(url: str, dest: Path) -> None:
+    """urllib 로 받되, 인증서 검증에 실패하면 curl 로 넘어간다.
+
+    macOS 의 python.org 빌드는 시스템 인증서를 안 쓰기 때문에 로컬에서 검증할 때
+    CERTIFICATE_VERIFY_FAILED 로 막힌다. certifi 가 있으면 그 번들을 쓰고,
+    그것마저 없으면 curl 로 받는다. 검증을 끄지는 않는다.
+    """
+    ctx = None
+    try:
+        import certifi
+
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        pass
+
+    try:
+        with urllib.request.urlopen(url, context=ctx) as r, open(dest, "wb") as f:
+            shutil.copyfileobj(r, f)
+        return
+    except urllib.error.URLError as e:
+        if not shutil.which("curl"):
+            raise
+        print(f"urllib 실패({e.reason}) — curl 로 재시도")
+
+    subprocess.run(["curl", "-fsSL", url, "-o", str(dest)], check=True)
+
+
 def fetch(url: str) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         zip_path = Path(tmp) / "bundle.zip"
         print(f"내려받는 중: {url}")
-        with urllib.request.urlopen(url) as r, open(zip_path, "wb") as f:
-            shutil.copyfileobj(r, f)
+        _download(url, zip_path)
         size_mb = zip_path.stat().st_size / 1e6
         print(f"받음: {size_mb:.1f}MB — 푸는 중 → {DATA_DIR}")
         with zipfile.ZipFile(zip_path) as z:
