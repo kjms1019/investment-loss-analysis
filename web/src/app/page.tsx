@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   api, type Alert, type AllTrade, type Dashboard, type Trade, type UserItem, type DomainId, type Disposition, type HoldingsResp, type Holding,
 } from "@/lib/api";
@@ -336,9 +336,24 @@ function Intro({ onStart }: { onStart: () => void }) {
   const [dom, setDom] = useState<"entry" | "cut">("entry");
   const [mine, setMine] = useState(-8);
   const [market, setMarket] = useState(-7);
+  // 끝까지 본 뒤에는 계속 켜져 있게 둔다. 되돌아갔다고 다시 꺼지면 갇힌 느낌이 난다.
+  const [unlocked, setUnlocked] = useState(false);
 
-  const LAST = 4;
-  const move = useCallback((d: number) => setI((v) => Math.min(LAST, Math.max(0, v + d))), []);
+  const LIVE = "#F5500A";   // 실시간단
+  const ANAL = NAVY;        // 분석단
+
+  const SLIDES = useMemo(() => ([
+    { stage: "cover" as const, kicker: "WHY WE LOSE", num: "" },
+    { stage: "analysis" as const, kicker: "분석단 · 무엇을 보는가", num: "" },
+    { stage: "analysis" as const, kicker: "분석단 · STEP 01 포집", num: "01" },
+    { stage: "analysis" as const, kicker: "분석단 · STEP 02 진단", num: "02" },
+    { stage: "live" as const, kicker: "분석단 → 실시간단 · STEP 03 저장", num: "03" },
+    { stage: "live" as const, kicker: "실시간단 · STEP 04 경고", num: "04" },
+  ]), []);
+  const LAST = SLIDES.length - 1;
+
+  const move = useCallback((d: number) => setI((v) => Math.min(SLIDES.length - 1, Math.max(0, v + d))), [SLIDES.length]);
+  useEffect(() => { if (i === LAST) setUnlocked(true); }, [i, LAST]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight") move(1);
@@ -351,235 +366,267 @@ function Intro({ onStart }: { onStart: () => void }) {
   const shape = LOSS_SHAPES[dom];
   const alpha = +(mine - market).toFixed(1);
   const isMine = alpha <= -2;
+  const cols: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 30, alignItems: "center" };
 
-  const cta: CSSProperties = {
-    background: ACCENT, color: "#fff", border: "none", borderRadius: 10,
-    padding: "13px 24px", fontSize: 14.5, fontWeight: 600, cursor: "pointer", letterSpacing: -0.2,
-  };
-  const cols: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(272px,1fr))", gap: 34, alignItems: "center" };
-
-  const SLIDES: { kicker: string; num: string; node: ReactNode }[] = [
-    {
-      kicker: "WHY WE LOSE", num: "",
-      node: (
-        <div style={{ maxWidth: 620 }}>
-          <h1 style={{ fontSize: "clamp(26px,3.8vw,36px)", fontWeight: 700, color: INK, lineHeight: 1.32, letterSpacing: -0.9, margin: "10px 0 0" }}>
-            사람마다<br /><span style={{ color: ACCENT }}>잃는 습관</span>이 따로 있습니다.
-          </h1>
-          <p style={{ ...slideBody, margin: "18px 0 0", maxWidth: 540 }}>
-            누구는 늘 고점에서 따라 사고, 누구는 늘 손절선을 넘기고도 버팁니다.
-            남들보다 내가 특별히 더 못한 순간만 골라내 그때의 실수를 진단하고,
-            같은 습관이 또 나오려는 순간에 잡아줍니다.
-          </p>
-          <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 28, flexWrap: "wrap" }}>
-            <button onClick={onStart} style={cta}>서비스 이용하기</button>
-            <span style={{ fontSize: 12.5, color: MUTED }}>가입 없이 예시 데이터셋으로 전체 흐름을 볼 수 있습니다</span>
-          </div>
-        </div>
-      ),
-    },
-    {
-      kicker: "SCOPE", num: "",
-      node: (
-        <div>
-          <h2 style={slideTitle}>종목을 분석하지 않습니다. 사람을 분석합니다.</h2>
-          <div style={{ ...cols, marginTop: 26, gap: 0 }}>
-            <div style={{ paddingRight: 26 }}>
-              <div style={{ ...kicker, color: "#B6BFCB" }}>이런 분석이 아닙니다</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "#98A2B0", margin: "10px 0 10px", letterSpacing: -0.4 }}>
-                &ldquo;이 종목이 왜 떨어졌나&rdquo;
-              </div>
-              <div style={{ fontSize: 13.5, color: "#98A2B0", lineHeight: 1.72 }}>
-                섹터 분석, 시황, 거시 환경. 이미 많은 곳이 해주는 이야기이고,
-                시장 수익률을 빼는 순간 사라지는 설명입니다.
-              </div>
+  const bodies: ReactNode[] = [
+    // 00 표지
+    (
+      <div style={{ maxWidth: 600 }}>
+        <h1 style={{ fontSize: "clamp(25px,3.6vw,34px)", fontWeight: 700, color: INK, lineHeight: 1.32, letterSpacing: -0.9, margin: "10px 0 0" }}>
+          사람마다<br /><span style={{ color: ACCENT }}>잃는 습관</span>이 따로 있습니다.
+        </h1>
+        <p style={{ ...slideBody, margin: "18px 0 0", maxWidth: 520 }}>
+          누구는 늘 고점에서 따라 사고, 누구는 늘 손절선을 넘기고도 버팁니다.
+          지난 거래에서 그 습관을 찾아내고, 다음 거래에서 같은 습관이 또 나오려는 순간에 잡아줍니다.
+        </p>
+        <div style={{ display: "flex", gap: 26, marginTop: 26, paddingTop: 18, borderTop: `1px solid ${HAIR}`, flexWrap: "wrap" }}>
+          {[["분석단", "지난 거래에서 내 습관을 찾는다", ANAL], ["실시간단", "다음 거래에서 그 습관을 잡는다", LIVE]].map(([t, d, c]) => (
+            <div key={t as string} style={{ minWidth: 190 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: c as string, letterSpacing: 0.4 }}>{t}</div>
+              <div style={{ fontSize: 13, color: BODY, marginTop: 5, lineHeight: 1.6 }}>{d}</div>
             </div>
-            <div style={{ paddingLeft: 26, borderLeft: `1px solid ${HAIR}` }}>
-              <div style={{ ...kicker, color: ACCENT }}>우리가 답하는 질문</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: INK, margin: "10px 0 10px", letterSpacing: -0.4 }}>
-                &ldquo;나는 왜 매번 여기서 잃나&rdquo;
-              </div>
-              <div style={{ fontSize: 13.5, color: BODY, lineHeight: 1.72 }}>
-                시장 탓을 걷어낸 자리에 남는 건 오직 내가 내린 선택입니다.
-                그 선택이 반복되면 습관이고, 습관은 바꿀 수 있습니다.
-              </div>
+          ))}
+        </div>
+      </div>
+    ),
+    // 01 분석단 — 무엇을 보는가
+    (
+      <div>
+        <h2 style={slideTitle}>종목을 분석하지 않습니다. 사람을 분석합니다.</h2>
+        <div style={{ ...cols, marginTop: 24, gap: 0 }}>
+          <div style={{ paddingRight: 24 }}>
+            <div style={{ ...kicker, color: "#B6BFCB" }}>이런 분석이 아닙니다</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: "#98A2B0", margin: "10px 0", letterSpacing: -0.4 }}>&ldquo;이 종목이 왜 떨어졌나&rdquo;</div>
+            <div style={{ fontSize: 13, color: "#98A2B0", lineHeight: 1.72 }}>
+              섹터 분석, 시황, 거시 환경. 이미 많은 곳이 해주는 이야기이고, 시장 수익률을 빼는 순간 사라지는 설명입니다.
+            </div>
+          </div>
+          <div style={{ paddingLeft: 24, borderLeft: `1px solid ${HAIR}` }}>
+            <div style={{ ...kicker, color: ACCENT }}>우리가 답하는 질문</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: INK, margin: "10px 0", letterSpacing: -0.4 }}>&ldquo;나는 왜 매번 여기서 잃나&rdquo;</div>
+            <div style={{ fontSize: 13, color: BODY, lineHeight: 1.72 }}>
+              시장 탓을 걷어낸 자리에 남는 건 오직 내가 내린 선택입니다. 그 선택이 반복되면 습관이고, 습관은 바꿀 수 있습니다.
             </div>
           </div>
         </div>
-      ),
-    },
-    {
-      kicker: "STEP 01 · 포집", num: "01",
-      node: (
-        <div>
-          <h2 style={slideTitle}>남들보다 내가 특별히 더 못한 순간만 남깁니다.</h2>
-          <p style={{ ...slideBody, maxWidth: 560 }}>
-            종목·섹터·거시 요인은 이 단계에서 통째로 빠집니다. 값을 직접 움직여 보세요.
-          </p>
-          <div style={{ background: NAVY, borderRadius: 14, padding: "20px 22px", color: "#fff", marginTop: 20 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 600, color: "#A9BDD6", marginBottom: 16, letterSpacing: -0.1 }}>
-              초과손실 α = 절대손익 − 같은 기간 KOSPI 수익률
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 24, alignItems: "center" }}>
-              <div>
-                {([["내 손익", mine, setMine], ["같은 기간 KOSPI", market, setMarket]] as const).map(([label, val, set]) => (
-                  <div key={label} style={{ marginBottom: 14 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: "#A9BDD6", marginBottom: 6 }}>
-                      <span>{label}</span>
-                      <b style={{ color: "#fff", fontSize: 14, fontVariantNumeric: "tabular-nums" }}>{val > 0 ? "+" : ""}{val}%</b>
-                    </div>
-                    <input type="range" min={-30} max={10} step={1} value={val}
-                      onChange={(e) => set(Number(e.target.value))}
-                      style={{ width: "100%", accentColor: ACCENT, cursor: "pointer" }} />
+      </div>
+    ),
+    // 02 포집 (α)
+    (
+      <div>
+        <h2 style={slideTitle}>남들보다 내가 특별히 더 못한 순간만 남깁니다.</h2>
+        <p style={{ ...slideBody, margin: "10px 0 0", maxWidth: 540 }}>종목·섹터·거시 요인은 이 단계에서 통째로 빠집니다. 값을 직접 움직여 보세요.</p>
+        <div style={{ background: NAVY, borderRadius: 14, padding: "18px 20px", color: "#fff", marginTop: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#A9BDD6", marginBottom: 14, letterSpacing: -0.1 }}>
+            초과손실 α = 절대손익 − 같은 기간 KOSPI 수익률
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 22, alignItems: "center" }}>
+            <div>
+              {([["내 손익", mine, setMine], ["같은 기간 KOSPI", market, setMarket]] as const).map(([label, val, set]) => (
+                <div key={label} style={{ marginBottom: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#A9BDD6", marginBottom: 5 }}>
+                    <span>{label}</span>
+                    <b style={{ color: "#fff", fontSize: 13.5, fontVariantNumeric: "tabular-nums" }}>{val > 0 ? "+" : ""}{val}%</b>
                   </div>
-                ))}
-              </div>
-              <div style={{ borderLeft: "1px solid rgba(255,255,255,.12)", paddingLeft: 22 }}>
-                <div style={{ fontSize: 11.5, color: "#8FA6C4", letterSpacing: 0.6, marginBottom: 5 }}>내 탓인 손실</div>
-                <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: -1.2, fontVariantNumeric: "tabular-nums", color: isMine ? "#FF9A66" : "#7FE3C4" }}>
-                  {alpha > 0 ? "+" : ""}{alpha}%
-                </div>
-                <div style={{ fontSize: 12.5, color: "#A9BDD6", marginTop: 8, lineHeight: 1.6 }}>
-                  {isMine ? "내 습관을 볼 차례입니다. 복기 대상." : "시장이 빠진 날입니다. 복기 대상에서 제외."}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div style={{ fontSize: 12.5, color: MUTED, marginTop: 12, lineHeight: 1.65 }}>
-            -8%를 잃었어도 그날 시장이 -7% 빠졌다면 내 몫은 -1%뿐입니다.
-            이걸 거르지 않으면 시장이 무너진 날 물린 모든 사람이 실패자가 됩니다.
-          </div>
-        </div>
-      ),
-    },
-    {
-      kicker: "STEP 02 · 진단", num: "02",
-      node: (
-        <div>
-          <h2 style={slideTitle}>그 순간, 무엇을 잘못했는지 가립니다.</h2>
-          <div style={{ display: "flex", gap: 6, margin: "18px 0 22px" }}>
-            {(["entry", "cut"] as const).map((k) => {
-              const on = dom === k;
-              return (
-                <button key={k} onClick={() => setDom(k)}
-                  style={{ cursor: "pointer", fontSize: 13, fontWeight: on ? 700 : 500, borderRadius: 8, padding: "8px 15px",
-                    border: `1px solid ${on ? INK : HAIR}`, background: on ? INK : "#fff", color: on ? "#fff" : MUTED, letterSpacing: -0.2 }}>
-                  {LOSS_SHAPES[k].label}
-                </button>
-              );
-            })}
-          </div>
-          <div style={cols}>
-            <div>
-              <div style={{ fontSize: 19, fontWeight: 700, color: INK, letterSpacing: -0.5, marginBottom: 10 }}>&ldquo;{shape.quote}&rdquo;</div>
-              <div style={{ fontSize: 13.5, color: BODY, lineHeight: 1.75, marginBottom: 14 }}>{shape.desc}</div>
-              <div style={{ fontSize: 12, color: shape.color, fontWeight: 600, paddingTop: 12, borderTop: `1px solid ${HAIR}` }}>
-                손실 경로 특징 · {shape.axis}
-              </div>
-            </div>
-            <div>
-              <ShapeChart pts={shape.path} color={shape.color} stop={shape.stop} />
-              <div style={{ fontSize: 11, color: "#A6B0BD", textAlign: "center", marginTop: 2 }}>보유 기간 중 가격 경로 (개념도)</div>
-            </div>
-          </div>
-          <div style={{ fontSize: 12.5, color: MUTED, marginTop: 20, lineHeight: 1.65 }}>
-            리벤지 매매·처분효과 같은 심리 신호는 별도 유형이 아니라, 이 두 가지를 설명하는 보강 근거로 씁니다.
-          </div>
-        </div>
-      ),
-    },
-    {
-      kicker: "STEP 03 · 습관과 교정", num: "03",
-      node: (
-        <div>
-          <h2 style={slideTitle}>반복되는 습관을 찾고, 또 나오려 할 때 잡습니다.</h2>
-          <div style={{ ...cols, marginTop: 24, gap: 30 }}>
-            <div>
-              <div style={{ ...kicker }}>찾아낸 습관</div>
-              <div style={{ fontSize: 17, fontWeight: 700, color: INK, letterSpacing: -0.4, margin: "10px 0 8px" }}>
-                손절선 이탈 후 2일 이상 보유
-              </div>
-              <div style={{ fontSize: 13.5, color: BODY, lineHeight: 1.7 }}>
-                이 습관을 다른 사람보다 <b style={{ color: ACCENT, fontWeight: 700 }}>1.4배</b> 자주 반복합니다.
-                단발성 실수는 누구나 하지만, 문제는 같은 자리에서 같은 방식으로 반복되는 것입니다.
-              </div>
-            </div>
-            <div>
-              <div style={{ ...kicker }}>개입 시점</div>
-              {[
-                ["매수 버튼을 누르기 직전", "늘 고점에서 따라 사던 그 모양이면 미리 알립니다"],
-                ["보유 종목이 손절선에 닿을 때", "넘기고 버티던 습관이 또 나오려는 순간에 알립니다"],
-              ].map(([t, d], k) => (
-                <div key={t} style={{ paddingTop: 12, marginTop: 10, borderTop: k === 0 ? "none" : `1px solid ${HAIR}` }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: INK, letterSpacing: -0.3 }}>{t}</div>
-                  <div style={{ fontSize: 12.5, color: MUTED, marginTop: 4, lineHeight: 1.6 }}>{d}</div>
+                  <input type="range" min={-30} max={10} step={1} value={val}
+                    onChange={(e) => set(Number(e.target.value))} style={{ width: "100%", accentColor: ACCENT, cursor: "pointer" }} />
                 </div>
               ))}
             </div>
+            <div style={{ borderLeft: "1px solid rgba(255,255,255,.12)", paddingLeft: 20 }}>
+              <div style={{ fontSize: 11, color: "#8FA6C4", letterSpacing: 0.6, marginBottom: 4 }}>내 탓인 손실</div>
+              <div style={{ fontSize: 29, fontWeight: 700, letterSpacing: -1.1, fontVariantNumeric: "tabular-nums", color: isMine ? "#FF9A66" : "#7FE3C4" }}>
+                {alpha > 0 ? "+" : ""}{alpha}%
+              </div>
+              <div style={{ fontSize: 12, color: "#A9BDD6", marginTop: 7, lineHeight: 1.6 }}>
+                {isMine ? "내 습관을 볼 차례입니다. 복기 대상." : "시장이 빠진 날입니다. 복기 대상에서 제외."}
+              </div>
+            </div>
           </div>
-          <div style={{ display: "flex", gap: 26, flexWrap: "wrap", marginTop: 26, paddingTop: 18, borderTop: `1px solid ${HAIR}` }}>
-            {[["798종목", "KOSPI 1분봉 5,467만 행"], ["AUC 0.839", "5-fold 교차검증"], ["심리 3패턴", "논문 실측값에 맞춤"]].map(([t, d]) => (
-              <div key={t}>
-                <div style={{ fontSize: 14.5, fontWeight: 700, color: INK, letterSpacing: -0.3, fontVariantNumeric: "tabular-nums" }}>{t}</div>
-                <div style={{ fontSize: 11.5, color: MUTED, marginTop: 3 }}>{d}</div>
+        </div>
+        <div style={{ fontSize: 12, color: MUTED, marginTop: 10, lineHeight: 1.65 }}>
+          -8%를 잃었어도 그날 시장이 -7% 빠졌다면 내 몫은 -1%뿐입니다.
+        </div>
+      </div>
+    ),
+    // 03 진단 (도메인)
+    (
+      <div>
+        <h2 style={slideTitle}>그 순간, 무엇을 잘못했는지 가립니다.</h2>
+        <div style={{ display: "flex", gap: 6, margin: "16px 0 20px" }}>
+          {(["entry", "cut"] as const).map((k) => {
+            const on = dom === k;
+            return (
+              <button key={k} onClick={() => setDom(k)}
+                style={{ cursor: "pointer", fontSize: 12.5, fontWeight: on ? 700 : 500, borderRadius: 8, padding: "7px 14px",
+                  border: `1px solid ${on ? INK : HAIR}`, background: on ? INK : "#fff", color: on ? "#fff" : MUTED, letterSpacing: -0.2 }}>
+                {LOSS_SHAPES[k].label}
+              </button>
+            );
+          })}
+        </div>
+        <div style={cols}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: INK, letterSpacing: -0.5, marginBottom: 9 }}>&ldquo;{shape.quote}&rdquo;</div>
+            <div style={{ fontSize: 13, color: BODY, lineHeight: 1.75, marginBottom: 12 }}>{shape.desc}</div>
+            <div style={{ fontSize: 11.5, color: shape.color, fontWeight: 600, paddingTop: 11, borderTop: `1px solid ${HAIR}` }}>
+              손실 경로 특징 · {shape.axis}
+            </div>
+          </div>
+          <div>
+            <ShapeChart pts={shape.path} color={shape.color} stop={shape.stop} />
+            <div style={{ fontSize: 10.5, color: "#A6B0BD", textAlign: "center", marginTop: 2 }}>보유 기간 중 가격 경로 (개념도)</div>
+          </div>
+        </div>
+        <div style={{ fontSize: 12, color: MUTED, marginTop: 16, lineHeight: 1.65 }}>
+          리벤지 매매·처분효과 같은 심리 신호는 별도 유형이 아니라, 이 두 가지를 설명하는 보강 근거로 씁니다.
+        </div>
+      </div>
+    ),
+    // 04 저장 — 분석단이 실시간단으로 넘어가는 지점
+    (
+      <div>
+        <h2 style={slideTitle}>여기까지가 분석단입니다. 찾아낸 습관은 나에게 저장됩니다.</h2>
+        <p style={{ ...slideBody, margin: "10px 0 0", maxWidth: 560 }}>
+          한 번 진단하고 끝나면 다음 달에 똑같이 반복합니다. 그래서 결과를 리포트로 흘려보내지 않고, 사용자별 습관 프로필로 남깁니다.
+        </p>
+        {/* 분석단 → 프로필 → 실시간단 */}
+        <div style={{ display: "flex", alignItems: "stretch", gap: 0, marginTop: 20, flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 200px", padding: "14px 18px 14px 0" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: ANAL, letterSpacing: 0.6, marginBottom: 8 }}>분석단</div>
+            <div style={{ fontSize: 13.5, color: BODY, lineHeight: 1.65 }}>지난 1년치 거래에서 시장 탓을 걷어내고, 실패의 모양을 가려냅니다.</div>
+          </div>
+          <div style={{ flex: "1 1 230px", padding: "14px 18px", borderLeft: `1px solid ${HAIR}`, borderRight: `1px solid ${HAIR}`, background: "#FAFBFC" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: ACCENT, letterSpacing: 0.6, marginBottom: 8 }}>내 습관 프로필</div>
+            <div style={{ fontSize: 14.5, fontWeight: 700, color: INK, letterSpacing: -0.3, marginBottom: 5 }}>손절선 이탈 후 2일 이상 보유</div>
+            <div style={{ fontSize: 12.5, color: BODY, lineHeight: 1.6 }}>
+              다른 사람보다 <b style={{ color: ACCENT, fontWeight: 700 }}>1.4배</b> 자주 반복 · 처분효과
+            </div>
+          </div>
+          <div style={{ flex: "1 1 200px", padding: "14px 0 14px 18px" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: LIVE, letterSpacing: 0.6, marginBottom: 8 }}>실시간단</div>
+            <div style={{ fontSize: 13.5, color: BODY, lineHeight: 1.65 }}>이 프로필이 다음 거래를 지켜보는 기준이 됩니다. 사람마다 다른 기준입니다.</div>
+          </div>
+        </div>
+        <div style={{ fontSize: 12, color: MUTED, marginTop: 16, lineHeight: 1.65 }}>
+          같은 -5% 하락이어도, 손절을 미루는 사람과 고점을 쫓는 사람에게 필요한 경고는 다릅니다.
+        </div>
+      </div>
+    ),
+    // 05 실시간 경고
+    (
+      <div>
+        <h2 style={slideTitle}>다음 거래에서, 그 습관이 또 나오려는 순간 알립니다.</h2>
+        <p style={{ ...slideBody, margin: "10px 0 0", maxWidth: 560 }}>
+          시세와 보유 종목을 계속 지켜보다가, 내 습관이 재현되려는 두 지점에서 개입합니다.
+        </p>
+        <div style={{ ...cols, marginTop: 18, gap: 24 }}>
+          <div>
+            {[
+              ["매수 버튼을 누르기 직전", "늘 고점에서 따라 사던 그 모양이면 주문 전에 알립니다"],
+              ["보유 종목이 손절선에 닿을 때", "넘기고 버티던 습관이 또 나오려는 순간에 알립니다"],
+            ].map(([t, d], k) => (
+              <div key={t} style={{ paddingTop: k === 0 ? 0 : 12, marginTop: k === 0 ? 0 : 10, borderTop: k === 0 ? "none" : `1px solid ${HAIR}` }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: INK, letterSpacing: -0.3 }}>{t}</div>
+                <div style={{ fontSize: 12.5, color: MUTED, marginTop: 4, lineHeight: 1.6 }}>{d}</div>
               </div>
             ))}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 24, flexWrap: "wrap" }}>
-            <button onClick={onStart} style={cta}>서비스 이용하기</button>
-            <span style={{ fontSize: 12.5, color: MUTED }}>손실은 기록됩니다. 이제 습관도 기록됩니다.</span>
+          {/* 경고 카드 축소본 */}
+          <div style={{ border: `1px solid ${HAIR}`, borderLeft: `3px solid ${LIVE}`, borderRadius: 10, padding: "13px 15px", background: "#fff" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>기업은행</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: LIVE, fontVariantNumeric: "tabular-nums" }}>-7.3%</div>
+            </div>
+            <div style={{ fontSize: 11, color: MUTED, marginBottom: 10, fontVariantNumeric: "tabular-nums" }}>손절선 ₩20,758 · 현재 ₩20,250</div>
+            <div style={{ fontSize: 12.5, color: BODY, lineHeight: 1.6, marginBottom: 10 }}>
+              손절선 아래로 내려왔어요. 더 버티지 말고 지금 손절선을 지키세요.
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <div style={{ flex: 1, height: 4, borderRadius: 2, background: "#EEF1F5", overflow: "hidden" }}>
+                <div style={{ width: "88%", height: "100%", background: LIVE }} />
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 700, color: LIVE, fontVariantNumeric: "tabular-nums" }}>위험도 88</span>
+            </div>
           </div>
         </div>
-      ),
-    },
+        <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginTop: 20, paddingTop: 14, borderTop: `1px solid ${HAIR}` }}>
+          {[["798종목", "KOSPI 1분봉 5,467만 행"], ["AUC 0.839", "5-fold 교차검증"], ["심리 3패턴", "논문 실측값에 맞춤"]].map(([t, d]) => (
+            <div key={t}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: INK, letterSpacing: -0.3, fontVariantNumeric: "tabular-nums" }}>{t}</div>
+              <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>{d}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ),
   ];
 
   const cur = SLIDES[i];
+  const stageColor = cur.stage === "live" ? LIVE : cur.stage === "analysis" ? ANAL : MUTED;
   const arrow = (enabled: boolean): CSSProperties => ({
-    width: 34, height: 34, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center",
+    width: 32, height: 32, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center",
     border: `1px solid ${enabled ? "#D5DCE5" : HAIR}`, background: "#fff",
     color: enabled ? INK : "#CBD3DC", cursor: enabled ? "pointer" : "default", padding: 0,
   });
 
   return (
-    <div style={{ maxWidth: 780, margin: "0 auto", padding: "4px 2px 30px" }}>
-      {/* 머리: 로고 + 진행 표시 */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: 14, borderBottom: `1px solid ${HAIR}` }}>
+    <div style={{ maxWidth: 780, margin: "0 auto", padding: "4px 2px 22px" }}>
+      {/* 머리: 로고 + 단계별 진행 표시 */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: 12, borderBottom: `1px solid ${HAIR}`, gap: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Logo size={26} />
-          <div style={{ fontWeight: 700, fontSize: 15, color: INK, letterSpacing: -0.3 }}>왜 잃었지?</div>
-          <div style={{ fontSize: 11.5, color: MUTED, paddingLeft: 9, marginLeft: 3, borderLeft: `1px solid ${HAIR}` }}>
-            초개인화 주식 거래 습관 교정
-          </div>
+          <Logo size={24} />
+          <div style={{ fontWeight: 700, fontSize: 14.5, color: INK, letterSpacing: -0.3 }}>왜 잃었지?</div>
+          <div style={{ fontSize: 11, color: MUTED, paddingLeft: 9, marginLeft: 3, borderLeft: `1px solid ${HAIR}` }}>초개인화 주식 거래 습관 교정</div>
         </div>
-        <div style={{ display: "flex", gap: 5 }}>
-          {SLIDES.map((_, k) => (
-            <button key={k} onClick={() => setI(k)} aria-label={`${k + 1}번째`}
-              style={{ width: k === i ? 20 : 7, height: 3, borderRadius: 2, border: "none", padding: 0,
-                background: k === i ? ACCENT : "#DFE5EC", cursor: "pointer", transition: "width .22s, background .22s" }} />
+        {/* 분석단·실시간단이 눈으로 갈라져 보이게 묶어서 표시한다 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          {([["분석단", "analysis", ANAL], ["실시간단", "live", LIVE]] as const).map(([label, st, c]) => (
+            <div key={st} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.5, color: cur.stage === st ? c : "#C2CAD4" }}>{label}</span>
+              <div style={{ display: "flex", gap: 4 }}>
+                {SLIDES.map((sl, k) => sl.stage !== st ? null : (
+                  <button key={k} onClick={() => setI(k)} aria-label={`${k + 1}번째`}
+                    style={{ width: k === i ? 16 : 6, height: 3, borderRadius: 2, border: "none", padding: 0,
+                      background: k === i ? c : "#DFE5EC", cursor: "pointer", transition: "width .22s, background .22s" }} />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </div>
 
       {/* 무대 */}
-      <div style={{ position: "relative", overflow: "hidden", minHeight: 396, padding: "26px 0 8px" }}>
+      <div style={{ position: "relative", overflow: "hidden", minHeight: 372, padding: "22px 0 6px" }}>
         <GhostNum n={cur.num} />
         <div key={i} style={{ position: "relative", animation: "introIn .32s cubic-bezier(.22,.8,.28,1) both" }}>
-          <div style={kicker}>{cur.kicker}</div>
-          {cur.node}
+          <div style={{ ...kicker, color: stageColor }}>{cur.kicker}</div>
+          {bodies[i]}
         </div>
         <style>{`@keyframes introIn{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}`}</style>
       </div>
 
-      {/* 발: 좌우 이동 */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 14, borderTop: `1px solid ${HAIR}` }}>
-        <div style={{ fontSize: 11.5, color: MUTED, letterSpacing: 1.2, fontVariantNumeric: "tabular-nums" }}>
-          {String(i + 1).padStart(2, "0")} <span style={{ color: "#CBD3DC" }}>/ {String(SLIDES.length).padStart(2, "0")}</span>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
+      {/* 발: 좌우 이동 + 항상 자리를 지키는 CTA */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 12, borderTop: `1px solid ${HAIR}`, gap: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button onClick={() => move(-1)} disabled={i === 0} aria-label="이전" style={arrow(i > 0)}><Chevron dir="l" /></button>
           <button onClick={() => move(1)} disabled={i === LAST} aria-label="다음" style={arrow(i < LAST)}><Chevron dir="r" /></button>
+          <span style={{ fontSize: 11, color: MUTED, letterSpacing: 1.2, fontVariantNumeric: "tabular-nums" }}>
+            {String(i + 1).padStart(2, "0")} <span style={{ color: "#CBD3DC" }}>/ {String(SLIDES.length).padStart(2, "0")}</span>
+          </span>
         </div>
+        {/* 끝까지 보면 불이 들어온다. 그 전까지는 자리만 지킨다. */}
+        <button onClick={() => unlocked && onStart()} disabled={!unlocked}
+          title={unlocked ? "" : "마지막 장까지 보면 활성화됩니다"}
+          style={{
+            border: "none", borderRadius: 10, padding: "12px 26px", fontSize: 14, fontWeight: 600, letterSpacing: -0.2,
+            background: unlocked ? ACCENT : "#EEF1F5", color: unlocked ? "#fff" : "#AEB7C2",
+            cursor: unlocked ? "pointer" : "default",
+            boxShadow: unlocked ? "0 4px 14px rgba(245,80,10,.28)" : "none",
+            transition: "background .35s ease, color .35s ease, box-shadow .35s ease",
+          }}>
+          서비스 이용하기
+        </button>
       </div>
     </div>
   );
