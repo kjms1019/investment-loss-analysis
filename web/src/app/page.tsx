@@ -414,7 +414,7 @@ function Intro({ onStart }: { onStart: () => void }) {
     // 02 포집 (α)
     (
       <div>
-        <h2 style={slideTitle}>남들보다 내가 특별히 더 못한 순간만 남깁니다.</h2>
+        <h2 style={slideTitle}>시장 요인이 아닌 &lsquo;내가&rsquo; 못한 순간을 포집합니다.</h2>
         <p style={{ ...slideBody, margin: "10px 0 0", maxWidth: 540 }}>종목·섹터·거시 요인은 이 단계에서 통째로 빠집니다. 값을 직접 움직여 보세요.</p>
         <div style={{ background: NAVY, borderRadius: 14, padding: "18px 20px", color: "#fff", marginTop: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: "#A9BDD6", marginBottom: 14, letterSpacing: -0.1 }}>
@@ -486,9 +486,9 @@ function Intro({ onStart }: { onStart: () => void }) {
     // 04 저장 — 분석단이 실시간단으로 넘어가는 지점
     (
       <div>
-        <h2 style={slideTitle}>여기까지가 분석단입니다. 찾아낸 습관은 나에게 저장됩니다.</h2>
+        <h2 style={slideTitle}>여기까지가 분석단입니다. 찾아낸 습관은 개인 프로필에 저장됩니다.</h2>
         <p style={{ ...slideBody, margin: "10px 0 0", maxWidth: 560 }}>
-          한 번 진단하고 끝나면 다음 달에 똑같이 반복합니다. 그래서 결과를 리포트로 흘려보내지 않고, 사용자별 습관 프로필로 남깁니다.
+          한 번 진단하고 끝나면 다음 달에 똑같이 반복합니다. 그래서 결과를 리포트로 흘려보내지 않고, 사용자 개인 프로필에 습관으로 남깁니다.
         </p>
         {/* 분석단 → 프로필 → 실시간단 */}
         <div style={{ display: "flex", alignItems: "stretch", gap: 0, marginTop: 20, flexWrap: "wrap" }}>
