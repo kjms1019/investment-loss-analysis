@@ -156,8 +156,12 @@ export default function Home() {
   // 넓은 화면에서는 본문에 패널 폭만큼 오른쪽 여백을 줘서 화면이 통째로 왼쪽으로
   // 밀려나게 한다(본문 자체의 폭·비율은 건드리지 않는다). 화면이 좁으면 여백을
   // 주는 순간 본문이 찌그러지므로, 그때는 패널을 위에 겹쳐 띄운다.
-  const [archOpen, setArchOpen] = useState(true);
+  // 패널은 자리가 될 때만 저절로 열린다. 좁은 화면에서 기본으로 열어두면
+  // 겹쳐 뜨면서 헤더의 단계 내비게이션을 가려버린다. 사용자가 직접 토글하면
+  // 그 선택(archPref)이 자동 판단을 덮어쓴다.
   const roomy = useMinWidth(1680);  // 본문 1080 + 패널 560 + 여백
+  const [archPref, setArchPref] = useState<boolean | null>(null);
+  const archOpen = archPref ?? roomy;
   const showArch = archOpen && showNav;
   const archInline = showArch && roomy;
 
@@ -184,7 +188,7 @@ export default function Home() {
                 </span>
               )}
               <button
-                onClick={() => setArchOpen((v) => !v)}
+                onClick={() => setArchPref(!archOpen)}
                 title="에이전트 아키텍처를 화면 오른쪽에서 실시간으로 따라갑니다"
                 style={{ marginLeft: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 9, padding: "7px 11px", fontSize: 13, fontWeight: 600, border: "1px solid " + (archOpen ? "#0B2E59" : "#E5E8EB"), background: archOpen ? "#0B2E59" : "#fff", color: archOpen ? "#fff" : "#4E5968" }}>
                 <span style={{ width: 6, height: 6, borderRadius: "50%", background: archOpen ? "#FF6A2B" : "#B0B8C1" }} />
@@ -219,7 +223,7 @@ export default function Home() {
             onToProfile={() => { markSeen(); go("profile"); }}
           />;
         })()}
-        {screen === "profile" && <ProfileView disp={disp} userName={curUserName} />}
+        {screen === "profile" && <ProfileView disp={disp} userName={curUserName} onNext={() => go("alerts")} />}
         {screen === "alerts" && <AlertsView data={hold} />}
       </main>
 
@@ -1148,18 +1152,30 @@ function TradesView({ trades, filterType, setFilterType, filterSev, setFilterSev
 }
 
 // ── ⑤ PROFILE ────────────────────────────────────────────────────────────────
+/** 지각 밝기로 어두운 색인지 판정. 그 위에 올릴 글자·선의 색을 정할 때 쓴다. */
+function isDarkHex(hex: string): boolean {
+  const h = hex.replace("#", "");
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  return 0.299 * r + 0.587 * g + 0.114 * b < 140;
+}
+
 function CompareBar({ user, pop, color }: { user: number; pop: number; color: string }) {
   // 본인 발생률(채움) + 모집단 평균 위치(세로 마커)를 한 막대에 표시.
   const max = Math.max(100, user, pop);
+  // 평균 마커가 채움 위에 놓이는데 그 색이 어두우면(손절실패 남색) 검은 선이 묻힌다.
+  // 그럴 때만 흰 선으로 뒤집는다. 회색 트랙 위나 밝은 채움(진입오류 주황) 위에서는
+  // 검은 선이 가장 잘 보인다.
+  const onFill = pop <= user;
+  const markColor = onFill && isDarkHex(color) ? "#FFFFFF" : "#191F28";
   return (
     <div style={{ position: "relative", height: 10, borderRadius: 6, background: "#EEF1F4", overflow: "hidden" }}>
       <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: (user / max) * 100 + "%", background: color, borderRadius: 6 }} />
-      <div style={{ position: "absolute", left: (pop / max) * 100 + "%", top: -2, bottom: -2, width: 2, background: "#191F28" }} title="모집단 평균" />
+      <div style={{ position: "absolute", left: (pop / max) * 100 + "%", top: -2, bottom: -2, width: 2, background: markColor }} title="모집단 평균" />
     </div>
   );
 }
 
-function ProfileView({ disp, userName }: { disp: Disposition | null; userName: string }) {
+function ProfileView({ disp, userName, onNext }: { disp: Disposition | null; userName: string; onNext: () => void }) {
   if (!disp) return <div><Section step="5" label="복기 루프 · 5단계 내 성향 프로파일" /><Loading /></div>;
   const dm = DOMAIN[disp.dominant.id];
   // 헤드라인은 첫 콤마 뒤에서만 줄바꿈하고, 그다음은 한 줄로 이어지게.
@@ -1187,7 +1203,7 @@ function ProfileView({ disp, userName }: { disp: Disposition | null; userName: s
 
       {/* 모집단 대비 유독 잘 걸리는 피쳐 */}
       <div style={{ fontSize: 16, fontWeight: 700, color: "#191F28", marginBottom: 4 }}>남들보다 유독 잘 걸리는 지점</div>
-      <p style={{ fontSize: 13, color: "#8B95A1", margin: "0 0 14px" }}>10명 평균(│ 검은 선)과 비교한 {userName}님의 발생률입니다.</p>
+      <p style={{ fontSize: 13, color: "#8B95A1", margin: "0 0 14px" }}>막대 위 │ 표시가 10명 평균입니다. {userName}님의 발생률과 비교해 보세요.</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 12, marginBottom: 28 }}>
         {disp.signature.map((s, i) => {
           const c = DOMAIN[s.domain].color;
@@ -1248,8 +1264,29 @@ function ProfileView({ disp, userName }: { disp: Disposition | null; userName: s
         </div>
       )}
 
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "#F2F4F6", borderRadius: 9, padding: "9px 13px" }}>
-        <span style={{ fontSize: 13, color: "#4E5968", fontWeight: 500 }}>이 성향이 곧 실시간 알림(예측기)의 학습 근거가 돼요.</span>
+      {/* 분석단의 끝. 여기서 찾은 습관이 실시간단의 판단 기준이 된다는 걸
+          말로만 두지 않고, 그 자리에서 바로 넘어갈 수 있게 한다. */}
+      <div style={{ marginTop: 26, paddingTop: 20, borderTop: "1px solid #E5E8EB",
+        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 18, flexWrap: "wrap" }}>
+        <div style={{ minWidth: 260, flex: 1 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 0.6, color: "#F5500A", marginBottom: 7 }}>
+            분석단 완료 · 다음은 실시간단
+          </div>
+          <div style={{ fontSize: 15.5, fontWeight: 700, color: "#191F28", letterSpacing: -0.3, marginBottom: 5 }}>
+            여기서 찾은 습관이 개인 프로필에 저장됐어요.
+          </div>
+          <div style={{ fontSize: 13.5, color: "#8B95A1", lineHeight: 1.6 }}>
+            이제 이 프로필이 {userName}님의 다음 거래를 지켜보는 기준이 됩니다.
+          </div>
+        </div>
+        <button onClick={onNext}
+          style={{ display: "inline-flex", alignItems: "center", gap: 8, flexShrink: 0,
+            background: "#F5500A", color: "#fff", border: "none", borderRadius: 12,
+            padding: "14px 22px", fontSize: 14.5, fontWeight: 600, cursor: "pointer",
+            boxShadow: "0 4px 14px rgba(245,80,10,.26)", letterSpacing: -0.2 }}>
+          실시간 알림 보기
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7" /></svg>
+        </button>
       </div>
     </div>
   );
