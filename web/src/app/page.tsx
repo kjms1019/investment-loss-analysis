@@ -308,80 +308,77 @@ function Intro({ onStart }: { onStart: () => void }) {
   const [dom, setDom] = useState<"entry" | "cut">("entry");
   const [mine, setMine] = useState(-8);      // 내 손익 %
   const [market, setMarket] = useState(-7);  // 같은 기간 KOSPI %
-  const [step, setStep] = useState(1);
 
   const shape = LOSS_SHAPES[dom];
   const alpha = +(mine - market).toFixed(1);
-  const isMine = alpha <= -2;   // 복기 대상 판정 기준(데모용 표시값)
+  const isMine = alpha <= -2;   // 복기 대상 판정 기준(소개용 표시값)
 
-  const card: CSSProperties = { background: "#F8F9FA", borderRadius: 16, padding: "22px 24px" };
-  const secLabel: CSSProperties = { fontSize: 13, fontWeight: 700, color: orange, marginBottom: 10 };
-  const cta: CSSProperties = { ...primaryBtn, width: "auto", padding: "16px 34px", fontSize: 16.5 };
+  const card: CSSProperties = { background: "#F8F9FA", borderRadius: 14, padding: "18px 20px" };
+  const cta: CSSProperties = { ...primaryBtn, width: "auto", padding: "14px 28px", fontSize: 15.5 };
 
-  const STEPS = [
-    ["①", "거래내역", "매수→매도를 한 사이클로 묶습니다. 복기의 최소 단위입니다."],
-    ["②", "시장 탓 제거", "초과손실 α로 시장 요인을 걷어내고 '내 탓'인 손실만 남깁니다."],
-    ["③", "2-way 분류", "학습된 분류기가 진입오류·손절실패 점수를 매겨 원인을 가릅니다."],
-    ["④", "원인 설명", "그 판단의 근거가 된 피처를 그대로 문장으로 풀어 보여줍니다."],
-    ["⑤", "실시간 경고", "같은 실수가 반복되려는 순간, 매수 직전과 손절선 이탈 시점에 알립니다."],
-  ];
+  /** 번호 붙은 섹션 머리. 네 단계가 이 서비스의 골격이라 번호를 크게 세운다. */
+  const Step = ({ n, title, sub }: { n: string; title: string; sub: string }) => (
+    <div style={{ display: "flex", gap: 11, alignItems: "baseline", marginBottom: 12 }}>
+      <div style={{ fontSize: 20, fontWeight: 800, color: orange, lineHeight: 1.1, flexShrink: 0 }}>{n}</div>
+      <div>
+        <div style={{ fontSize: 17.5, fontWeight: 700, color: navy, lineHeight: 1.42 }}>{title}</div>
+        <div style={{ fontSize: 13.5, color: gray, marginTop: 4, lineHeight: 1.55 }}>{sub}</div>
+      </div>
+    </div>
+  );
 
   return (
-    <div style={{ maxWidth: 940, margin: "0 auto", padding: "10px 2px 60px" }}>
+    <div style={{ maxWidth: 860, margin: "0 auto", padding: "6px 2px 52px" }}>
       {/* 히어로 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 28, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 22, flexWrap: "wrap" }}>
         <Logo size={34} /><div style={{ fontWeight: 700, fontSize: 18 }}>왜 잃었지?</div>
         <span style={{ marginLeft: 6, fontSize: 12.5, fontWeight: 600, color: navy, background: "#EAF0F8", borderRadius: 7, padding: "5px 10px" }}>
-          주식 손실 원인 진단 멀티 에이전트
+          초개인화 주식 거래 습관 교정
         </span>
       </div>
 
-      <h1 style={{ fontSize: "clamp(28px,5vw,42px)", fontWeight: 800, color: navy, lineHeight: 1.28, margin: "0 0 16px", letterSpacing: -0.5 }}>
-        얼마 잃었는지는 아는데,<br /><span style={{ color: orange }}>왜 잃었는지는</span> 모릅니다.
+      <h1 style={{ fontSize: "clamp(24px,4vw,31px)", fontWeight: 700, color: navy, lineHeight: 1.34, margin: "0 0 12px", letterSpacing: -0.4 }}>
+        사람마다 <span style={{ color: orange }}>잃는 습관</span>이 따로 있습니다.
       </h1>
-      <p style={{ fontSize: "clamp(15.5px,2vw,18px)", color: "#4E5968", lineHeight: 1.7, margin: "0 0 28px", maxWidth: 680 }}>
-        손실은 기록되는데 이유는 기록되지 않습니다. 그래서 같은 실수가 반복됩니다.<br />
-        <b style={{ color: "#191F28", fontWeight: 600 }}>거래내역을 1분봉으로 되돌려 손실의 원인을 진단하고, 같은 실수가 반복되려는 순간 미리 경고합니다.</b>
+      <p style={{ fontSize: 15.5, color: "#4E5968", lineHeight: 1.68, margin: "0 0 24px", maxWidth: 660 }}>
+        누구는 늘 고점에서 따라 사고, 누구는 늘 손절선을 넘기고도 버팁니다.<br />
+        <b style={{ color: "#191F28", fontWeight: 600 }}>남들보다 내가 특별히 더 못한 순간만 골라내 그때의 실수를 진단하고,
+        같은 습관이 또 나오려는 순간에 잡아줍니다.</b>
       </p>
       <button onClick={onStart} style={cta}>서비스 이용하기</button>
-      <div style={{ fontSize: 13.5, color: gray, margin: "12px 0 46px" }}>
+      <div style={{ fontSize: 13.5, color: gray, margin: "10px 0 36px" }}>
         가입 없이 예시 데이터셋으로 전체 흐름을 볼 수 있습니다.
       </div>
 
-      {/* 인터랙션 1 — 손실의 두 모양 */}
-      <div style={secLabel}>손실의 원인을 두 가지로 나눕니다 · 눌러서 비교해 보세요</div>
-      <div style={{ ...card, marginBottom: 44 }}>
-        <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
-          {(["entry", "cut"] as const).map((k) => {
-            const on = dom === k, sh = LOSS_SHAPES[k];
-            return (
-              <button key={k} onClick={() => setDom(k)}
-                style={{ cursor: "pointer", fontSize: 14.5, fontWeight: on ? 700 : 500, borderRadius: 11, padding: "10px 18px",
-                  border: "1.5px solid " + (on ? sh.color : "#E5E8EB"), background: on ? sh.tint : "#fff", color: on ? sh.color : "#8B95A1" }}>
-                {sh.label}
-              </button>
-            );
-          })}
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 24, alignItems: "center" }}>
-          <div>
-            <div style={{ fontSize: 21, fontWeight: 700, color: navy, marginBottom: 10 }}>&ldquo;{shape.quote}&rdquo;</div>
-            <div style={{ fontSize: 15, color: "#4E5968", lineHeight: 1.65, marginBottom: 14 }}>{shape.desc}</div>
-            <div style={{ display: "inline-block", fontSize: 13, fontWeight: 600, color: shape.color, background: shape.tint, borderRadius: 8, padding: "7px 12px" }}>
-              손실 경로 특징 · {shape.axis}
-            </div>
+      {/* 무엇을 분석하지 않는가 */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(290px,1fr))", gap: 14, marginBottom: 36 }}>
+        <div style={{ ...card, borderLeft: "4px solid #D1D6DB" }}>
+          <div style={{ fontSize: 13, color: gray, marginBottom: 9, fontWeight: 600 }}>이런 분석이 아닙니다</div>
+          <div style={{ fontSize: 16.5, fontWeight: 700, color: "#4E5968", lineHeight: 1.45, marginBottom: 8 }}>
+            &ldquo;이 종목이 왜 떨어졌나&rdquo;
           </div>
-          <div style={{ background: "#fff", borderRadius: 12, padding: "10px 12px 6px" }}>
-            <ShapeChart pts={shape.path} color={shape.color} stop={shape.stop} />
-            <div style={{ fontSize: 11.5, color: gray, textAlign: "center", paddingBottom: 6 }}>보유 기간 중 가격 경로 (개념도)</div>
+          <div style={{ fontSize: 13.5, color: gray, lineHeight: 1.6 }}>
+            섹터 분석, 시황, 거시 환경. 이미 많은 곳이 해주는 이야기이고,
+            <b style={{ color: "#4E5968", fontWeight: 600 }}> 시장 수익률을 빼는 순간 사라지는 설명</b>입니다.
+          </div>
+        </div>
+        <div style={{ ...card, background: "#FFF6F1", borderLeft: `4px solid ${orange}` }}>
+          <div style={{ fontSize: 13, color: orange, marginBottom: 9, fontWeight: 700 }}>우리가 답하는 질문</div>
+          <div style={{ fontSize: 16.5, fontWeight: 700, color: navy, lineHeight: 1.45, marginBottom: 8 }}>
+            &ldquo;나는 왜 매번 여기서 잃나&rdquo;
+          </div>
+          <div style={{ fontSize: 13.5, color: "#8B6B5A", lineHeight: 1.6 }}>
+            종목이 아니라 <b style={{ color: navy, fontWeight: 600 }}>사람을 분석합니다.</b>
+            시장 탓을 걷어낸 자리에 남는 건 오직 내가 내린 선택입니다.
           </div>
         </div>
       </div>
 
-      {/* 인터랙션 2 — 초과손실 α 계산기 */}
-      <div style={secLabel}>먼저 시장 탓을 걷어냅니다 · 값을 움직여 보세요</div>
-      <div style={{ background: navy, borderRadius: 18, padding: "26px 28px", color: "#fff", marginBottom: 44 }}>
-        <div style={{ fontSize: "clamp(15px,2vw,18px)", fontWeight: 700, marginBottom: 20, letterSpacing: -0.2 }}>
+      {/* ① 포집 — 초과손실 α (인터랙티브) */}
+      <Step n="①" title="남들보다 내가 특별히 더 못한 순간만 남깁니다"
+        sub="여기서 종목·섹터·거시 요인은 통째로 빠집니다. 값을 직접 움직여 보세요." />
+      <div style={{ background: navy, borderRadius: 16, padding: "22px 24px", color: "#fff", marginBottom: 36 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 18, letterSpacing: -0.2 }}>
           초과손실 α = 절대손익 − 같은 기간 KOSPI 수익률
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 22, alignItems: "center" }}>
@@ -397,42 +394,96 @@ function Intro({ onStart }: { onStart: () => void }) {
               </div>
             ))}
           </div>
-          <div style={{ background: "rgba(255,255,255,.07)", borderRadius: 14, padding: "18px 20px", textAlign: "center" }}>
+          <div style={{ background: "rgba(255,255,255,.07)", borderRadius: 12, padding: "15px 16px", textAlign: "center" }}>
             <div style={{ fontSize: 13, color: "#C7D3E2", marginBottom: 6 }}>내 탓인 손실 (초과손실 α)</div>
-            <div style={{ fontSize: 34, fontWeight: 800, color: isMine ? "#FF9A66" : "#7FE3C4", letterSpacing: -1 }}>
+            <div style={{ fontSize: 27, fontWeight: 800, color: isMine ? "#FF9A66" : "#7FE3C4", letterSpacing: -0.8 }}>
               {alpha > 0 ? "+" : ""}{alpha}%
             </div>
             <div style={{ fontSize: 13.5, color: "#C7D3E2", marginTop: 10, lineHeight: 1.5 }}>
-              {isMine ? "복기 대상입니다. 원인을 진단합니다." : "시장 요인으로 보고 복기 대상에서 제외합니다."}
+              {isMine ? "내 습관을 볼 차례입니다. 복기 대상." : "시장이 빠진 날입니다. 복기 대상에서 제외."}
             </div>
           </div>
         </div>
-        <div style={{ fontSize: 13.5, color: "#9FB3CC", marginTop: 18, lineHeight: 1.6 }}>
-          이걸 거르지 않으면 시장이 무너진 날 물린 모든 사람이 실패자로 분류되고, 분석 전체가 오염됩니다.
+        <div style={{ fontSize: 13, color: "#9FB3CC", marginTop: 15, lineHeight: 1.6 }}>
+          -8%를 잃었어도 그날 시장이 -7% 빠졌다면 내 몫은 -1%뿐입니다. 이걸 거르지 않으면
+          시장이 무너진 날 물린 모든 사람이 실패자가 되고, 습관 분석이 통째로 오염됩니다.
         </div>
       </div>
 
-      {/* 인터랙션 3 — 파이프라인 */}
-      <div style={secLabel}>어떻게 동작하나 · 단계를 눌러 보세요</div>
-      <div style={{ marginBottom: 44 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", gap: 8, marginBottom: 14 }}>
-          {STEPS.map(([n, t], i) => {
-            const on = step === i + 1;
+      {/* ② 진단 — 두 도메인 (인터랙티브) */}
+      <Step n="②" title="그 순간, 무엇을 잘못했는지 가립니다"
+        sub="실패의 모양은 크게 두 가지입니다. 눌러서 비교해 보세요." />
+      <div style={{ ...card, marginBottom: 36 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+          {(["entry", "cut"] as const).map((k) => {
+            const on = dom === k, sh = LOSS_SHAPES[k];
             return (
-              <button key={t} onClick={() => setStep(i + 1)}
-                style={{ cursor: "pointer", textAlign: "left", borderRadius: 12, padding: "13px 14px",
-                  border: "1.5px solid " + (on ? orange : "transparent"), background: on ? "#FFF6F1" : "#F8F9FA" }}>
-                <div style={{ fontSize: 14, fontWeight: 800, color: on ? orange : "#B0B8C1", marginBottom: 4 }}>{n}</div>
-                <div style={{ fontSize: 14, fontWeight: on ? 700 : 500, color: on ? navy : "#4E5968" }}>{t}</div>
+              <button key={k} onClick={() => setDom(k)}
+                style={{ cursor: "pointer", fontSize: 13.5, fontWeight: on ? 700 : 500, borderRadius: 10, padding: "9px 15px",
+                  border: "1.5px solid " + (on ? sh.color : "#E5E8EB"), background: on ? sh.tint : "#fff", color: on ? sh.color : "#8B95A1" }}>
+                {sh.label}
               </button>
             );
           })}
         </div>
-        <div style={{ ...card, fontSize: 15, color: "#4E5968", lineHeight: 1.65 }}>{STEPS[step - 1][2]}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 24, alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: navy, marginBottom: 9 }}>&ldquo;{shape.quote}&rdquo;</div>
+            <div style={{ fontSize: 14, color: "#4E5968", lineHeight: 1.62, marginBottom: 12 }}>{shape.desc}</div>
+            <div style={{ display: "inline-block", fontSize: 13, fontWeight: 600, color: shape.color, background: shape.tint, borderRadius: 8, padding: "7px 12px" }}>
+              손실 경로 특징 · {shape.axis}
+            </div>
+          </div>
+          <div style={{ background: "#fff", borderRadius: 12, padding: "10px 12px 6px" }}>
+            <ShapeChart pts={shape.path} color={shape.color} stop={shape.stop} />
+            <div style={{ fontSize: 11.5, color: gray, textAlign: "center", paddingBottom: 6 }}>보유 기간 중 가격 경로 (개념도)</div>
+          </div>
+        </div>
+        <div style={{ fontSize: 13.5, color: gray, marginTop: 16, lineHeight: 1.6 }}>
+          리벤지 매매·처분효과 같은 심리 신호는 별도 유형이 아니라, 이 두 가지를 설명하는 보강 근거로 씁니다.
+        </div>
+      </div>
+
+      {/* ③ 패턴 */}
+      <Step n="③" title="한 번의 실수가 아니라, 반복되는 습관을 찾습니다"
+        sub="같은 실수가 몇 번이나 되풀이됐는지 세고, 다른 사람과 견줘 봅니다." />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 14, marginBottom: 36 }}>
+        <div style={{ background: "#fff", border: "1.5px solid #E5E8EB", borderRadius: 14, padding: "17px 19px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: navy, background: "#EAF0F8", borderRadius: 6, padding: "4px 9px" }}>손절실패</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "#8B6B5A", background: "#FDF3E3", borderRadius: 6, padding: "4px 9px" }}>처분효과</span>
+          </div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: navy, marginBottom: 7 }}>손절선 이탈 후 2일 이상 보유</div>
+          <div style={{ fontSize: 14, color: "#4E5968", lineHeight: 1.6 }}>
+            이 습관을 <b style={{ color: orange }}>다른 사람보다 1.4배</b> 자주 반복합니다.
+          </div>
+        </div>
+        <div style={{ ...card, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+          <div style={{ fontSize: 14, color: "#4E5968", lineHeight: 1.68 }}>
+            단발성 실수는 누구나 합니다. 문제는 <b style={{ color: navy, fontWeight: 600 }}>같은 자리에서 같은 방식으로 반복되는 것</b>입니다.
+            그래서 진단을 거래 하나로 끝내지 않고, 사용자별 습관으로 쌓아 둡니다.
+          </div>
+        </div>
+      </div>
+
+      {/* ④ 교정 */}
+      <Step n="④" title="같은 습관이 또 나오려 할 때 잡아줍니다"
+        sub="복기로 끝나면 다음 달에 똑같이 반복합니다. 개입 시점은 그 순간입니다." />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 14, marginBottom: 36 }}>
+        {[
+          ["매수 버튼을 누르기 직전", "진입 맥락을 보고 '늘 고점에서 따라 사던 그 모양'이면 미리 알립니다."],
+          ["보유 종목이 손절선에 닿을 때", "'손절선 넘기고 버티던 습관'이 또 나오려는 순간에 알립니다."],
+        ].map(([t, d]) => (
+          <div key={t} style={{ background: "#fff", border: "1.5px solid #FBD9BF", borderRadius: 14, padding: "17px 19px" }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: orange, marginBottom: 9 }}>사전 경고</div>
+            <div style={{ fontSize: 15.5, fontWeight: 700, color: navy, marginBottom: 7, lineHeight: 1.4 }}>{t}</div>
+            <div style={{ fontSize: 13.5, color: "#4E5968", lineHeight: 1.6 }}>{d}</div>
+          </div>
+        ))}
       </div>
 
       {/* 근거 숫자 */}
-      <div style={secLabel}>무엇을 근거로 하나</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: orange, marginBottom: 10 }}>무엇을 근거로 하나</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12, marginBottom: 40 }}>
         {[
           ["KOSPI 798종목", "1년치 1분봉 5,467만 행"],
@@ -441,19 +492,19 @@ function Intro({ onStart }: { onStart: () => void }) {
           ["학술 근거 기반", "임계값을 논문 실측값에 맞춤"],
         ].map(([t, d]) => (
           <div key={t} style={{ borderTop: "2px solid #E5E8EB", paddingTop: 13 }}>
-            <div style={{ fontSize: 16.5, fontWeight: 800, color: navy, letterSpacing: -0.3 }}>{t}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: navy, letterSpacing: -0.2 }}>{t}</div>
             <div style={{ fontSize: 13, color: gray, marginTop: 5, lineHeight: 1.5 }}>{d}</div>
           </div>
         ))}
       </div>
 
       {/* 마무리 */}
-      <div style={{ borderTop: "1px solid #F2F4F6", paddingTop: 32, textAlign: "center" }}>
-        <div style={{ fontSize: "clamp(18px,2.6vw,22px)", fontWeight: 700, color: navy, marginBottom: 8, lineHeight: 1.45 }}>
-          손실은 기록됩니다. 이제 이유도 기록됩니다.
+      <div style={{ borderTop: "1px solid #F2F4F6", paddingTop: 26, textAlign: "center" }}>
+        <div style={{ fontSize: 17.5, fontWeight: 700, color: navy, marginBottom: 7, lineHeight: 1.45 }}>
+          손실은 기록됩니다. 이제 습관도 기록됩니다.
         </div>
-        <div style={{ fontSize: 14.5, color: gray, marginBottom: 22 }}>
-          매매 추천은 하지 않습니다. 지난 거래를 복기하고, 내가 정한 규칙을 지키도록 돕습니다.
+        <div style={{ fontSize: 13.5, color: gray, marginBottom: 20 }}>
+          매매 추천은 하지 않습니다. 내 거래 습관을 보여주고, 스스로 정한 규칙을 지키도록 돕습니다.
         </div>
         <button onClick={onStart} style={cta}>서비스 이용하기</button>
       </div>
