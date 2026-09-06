@@ -202,13 +202,12 @@ function Down() {
   );
 }
 
-/** 본류(가운데 열) → 옆 박스로 들어가는 가로 화살표. 분기 조건은 화살표 위에 적는다. */
-function InArrow({ label, color = ARROW }: { label?: string; color?: string }) {
+/** 본류(가운데 열) → 옆 박스로 들어가는 가로 화살표.
+ *  분기 조건은 화살표 위에 얹지 않는다. 폭이 34px 뿐이라 글자가 옆 텍스트에 겹쳐
+ *  가려졌다. 조건은 옆 박스 설명줄에 적는다. */
+function InArrow({ color = ARROW }: { color?: string }) {
   return (
     <div style={{ position: "relative", width: 34, flexShrink: 0, alignSelf: "center" }}>
-      {label && (
-        <div style={{ position: "absolute", bottom: "100%", left: 0, marginBottom: 3, fontSize: 10.5, fontWeight: 800, color, whiteSpace: "nowrap" }}>{label}</div>
-      )}
       <svg width="34" height="12" style={{ display: "block" }}>
         <line x1="0" y1="6" x2="24" y2="6" stroke={color} strokeWidth="2.5" strokeLinecap="round" />
         <path d="M22,1 L32,6 L22,11" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -277,9 +276,9 @@ function AnalysisFlow({ A, any }: { A: (id: string) => boolean; any: boolean }) 
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: "#3FC4B2" }}>일치 → 즉시 호출</div>
             <div style={{ display: "flex", alignItems: "center" }}>
-              <InArrow label="불일치" color="#6B4FE0" />
+              <InArrow color="#6B4FE0" />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <SideNote id="a-userpick" active={A("a-userpick")} title="사용자 선택" sub="무엇부터 볼지 고르기" color="#6B4FE0" />
+                <SideNote id="a-userpick" active={A("a-userpick")} title="사용자 선택" sub="불일치 시 · 무엇부터 볼지 고르기" color="#6B4FE0" />
               </div>
             </div>
             <BackElbow label="선택 후 호출" color="#6B4FE0" />
